@@ -1,0 +1,1 @@
+OBJS += passes/pift/pift.o
