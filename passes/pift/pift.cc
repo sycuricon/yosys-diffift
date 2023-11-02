@@ -88,7 +88,7 @@ struct PIFTWorker {
 				if (verbose)
 					log("\t\t\tsub-signal %s %s\n", log_signal(s, false), log_signal_type(s).c_str());
 
-				if (s.is_wire() && !in_list(s.wire->name.str(), ignore_ports)) {
+				if (s.is_wire() && !in_list(ID2NAME(s.wire->name), ignore_ports)) {
 					RTLIL::Wire *w = module->wire(ID2NAMETaint(s.wire->name, taint_id));
 					if (w == nullptr) {
 						w = module->addWire(ID2NAMETaint(s.wire->name, taint_id), s.wire);
@@ -107,8 +107,7 @@ struct PIFTWorker {
 	}
 
 	void instrument_port(RTLIL::Module *module) {
-		bool done = module->get_bool_attribute(ID(pift_port_instrumented));
-		if (done)
+		if (module->get_bool_attribute(ID(pift_port_instrumented)))
 			return;
 
 		size_t port_count = 0;
@@ -135,9 +134,9 @@ struct PIFTWorker {
 	}
 
 	void instrument_cell(RTLIL::Module *module) {
-		bool done = module->get_bool_attribute(ID(pift_cell_instrumented));
-		if (done)
+		if (module->get_bool_attribute(ID(pift_cell_instrumented)))
 			return;
+
 		size_t cell_count = 0;
 		for (auto c : module->cells().to_vector()) {
 			if (verbose)
@@ -220,19 +219,57 @@ struct PIFTWorker {
 			else if (c->type.in(ID($dff), ID($dffe), ID($sdffe), ID($sdffce))) {
 
 			}
+			else if (module->design->module(c->type) != nullptr) {
+				RTLIL::Module *cell_module_def = module->design->module(c->type);
+				instrument_port(cell_module_def);
+				for (auto &it : c->connections()) {
+					if (in_list(ID2NAME(it.first), ignore_ports))
+						continue;
+
+					if (verbose)
+						log("\t\tinst port %s %s %s\n", it.first.c_str(), log_signal(it.second, false), log_signal_type(it.second).c_str());
+
+					std::vector<RTLIL::SigSpec> port_taint = get_taint_signals(module, it.second);
+					for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
+						c->setPort(ID2NAMETaint(it.first, taint_id), port_taint[taint_id]);
+					}
+				}
+			}
+
 		}
 
 		module->set_bool_attribute(ID(pift_cell_instrumented), true);
 	}
 
+	void instrument_wire(RTLIL::Module *module) {
+		if (module->get_bool_attribute(ID(pift_wire_instrumented)))
+			return;
+
+		size_t wire_count = 0;
+		for (auto &conn : module->connections()) {
+			log_assert(conn.first.size() == conn.second.size());
+
+			if (verbose)
+				log("\t-w:%ld- instrument wire <%s> to <%s>\n", 
+					wire_count++, 
+					log_signal(conn.first, false), 
+					log_signal(conn.second, false)
+				);
+
+			std::vector<RTLIL::SigSpec> lvalue = get_taint_signals(module, conn.first);
+			std::vector<RTLIL::SigSpec> rvalue = get_taint_signals(module, conn.second);
+
+			for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++)
+				module->connect(lvalue[taint_id], rvalue[taint_id]);
+		}
+
+		module->set_bool_attribute(ID(pift_wire_instrumented), true);
+	}
+
 	void instrument(RTLIL::Module *module) {
 		instrument_port(module);
 		instrument_cell(module);
-
-		// clean up
-//		for (auto w : module->wires().to_vector()) {
-//			printf("[>] %s\n", log_signal(w, false));
-//		}
+		instrument_wire(module);
 	}
 };
 
