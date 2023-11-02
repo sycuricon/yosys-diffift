@@ -216,9 +216,9 @@ struct PIFTWorker {
 				}
 
 			}
-			else if (c->type.in(ID($dff), ID($dffe), ID($sdffe), ID($sdffce))) {
+			// else if (c->type.in(ID($dff), ID($dffe), ID($sdffe), ID($sdffce))) {
 
-			}
+			// }
 			else if (module->design->module(c->type) != nullptr) {
 				RTLIL::Module *cell_module_def = module->design->module(c->type);
 				instrument_port(cell_module_def);
@@ -235,7 +235,8 @@ struct PIFTWorker {
 					}
 				}
 			}
-
+			else
+				log_cmd_error("Catch an unsupported cell: %s!\n", c->type.c_str());
 		}
 
 		module->set_bool_attribute(ID(pift_cell_instrumented), true);
@@ -244,11 +245,11 @@ struct PIFTWorker {
 	void instrument_wire(RTLIL::Module *module) {
 		if (module->get_bool_attribute(ID(pift_wire_instrumented)))
 			return;
-
+		
+		std::vector<SigSig> taint_conns;
+		
 		size_t wire_count = 0;
 		for (auto &conn : module->connections()) {
-			log_assert(conn.first.size() == conn.second.size());
-
 			if (verbose)
 				log("\t-w:%ld- instrument wire <%s> to <%s>\n", 
 					wire_count++, 
@@ -259,9 +260,14 @@ struct PIFTWorker {
 			std::vector<RTLIL::SigSpec> lvalue = get_taint_signals(module, conn.first);
 			std::vector<RTLIL::SigSpec> rvalue = get_taint_signals(module, conn.second);
 
-			for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++)
-				module->connect(lvalue[taint_id], rvalue[taint_id]);
+			for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
+				taint_conns.push_back(RTLIL::SigSig(lvalue[taint_id], rvalue[taint_id]));
+			}	
 		}
+
+		for_each(taint_conns.begin(), taint_conns.end(), [module](SigSig &tc) {
+			module->connect(tc.first, tc.second);
+		});
 
 		module->set_bool_attribute(ID(pift_wire_instrumented), true);
 	}
