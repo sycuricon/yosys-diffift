@@ -1,6 +1,76 @@
 #include "kernel/yosys.h"
 
 USING_YOSYS_NAMESPACE
+
+#define DEC_TAINT_METHOD(_func) 			\
+	extern RTLIL::Cell* add ## _func ## Taint(	\
+	  RTLIL::Module*,                 		\
+	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, \
+	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, \
+	  bool, const std::string&          		\
+ 	);
+
+DEC_TAINT_METHOD(Not)
+DEC_TAINT_METHOD(Pos)
+DEC_TAINT_METHOD(Neg)
+DEC_TAINT_METHOD(ReduceAnd)
+DEC_TAINT_METHOD(ReduceOr)
+DEC_TAINT_METHOD(ReduceXor)
+DEC_TAINT_METHOD(ReduceXnor)
+DEC_TAINT_METHOD(ReduceBool)
+DEC_TAINT_METHOD(LogicNot)
+#undef DEC_TAINT_METHOD
+
+#define DEC_TAINT_METHOD(_func)							\
+	extern RTLIL::Cell* add ## _func ## Taint(				\
+	  RTLIL::Module*,							\
+	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&,	\
+	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&,	\
+	  bool is_signed, const std::string &src				\
+ 	);
+
+DEC_TAINT_METHOD(And)
+DEC_TAINT_METHOD(Or)
+DEC_TAINT_METHOD(Xor)
+DEC_TAINT_METHOD(Xnor)
+DEC_TAINT_METHOD(Shift)
+DEC_TAINT_METHOD(Shiftx)
+DEC_TAINT_METHOD(Lt)
+DEC_TAINT_METHOD(Le)
+DEC_TAINT_METHOD(Eq)
+DEC_TAINT_METHOD(Ne)
+DEC_TAINT_METHOD(Eqx)
+DEC_TAINT_METHOD(Nex)
+DEC_TAINT_METHOD(Ge)
+DEC_TAINT_METHOD(Gt)
+DEC_TAINT_METHOD(Add)
+DEC_TAINT_METHOD(Sub)
+DEC_TAINT_METHOD(Mul)
+DEC_TAINT_METHOD(Div)
+DEC_TAINT_METHOD(Mod)
+DEC_TAINT_METHOD(DivFloor)
+DEC_TAINT_METHOD(ModFloor)
+DEC_TAINT_METHOD(LogicAnd)
+DEC_TAINT_METHOD(LogicOr)
+DEC_TAINT_METHOD(Shl)
+DEC_TAINT_METHOD(Shr)
+DEC_TAINT_METHOD(Sshl)
+DEC_TAINT_METHOD(Sshr)
+#undef DEC_TAINT_METHOD
+
+#define DEC_TAINT_METHOD(_func)										\
+	extern RTLIL::Cell* add ## _func ## Taint(							\
+	  RTLIL::Module*,										\
+	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&,	\
+	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&,	\
+	  const std::string &src									\
+ 	);
+
+DEC_TAINT_METHOD(Mux)
+DEC_TAINT_METHOD(Bwmux)
+DEC_TAINT_METHOD(Pmux)
+#undef DEC_TAINT_METHOD
+
 PRIVATE_NAMESPACE_BEGIN
 
 #define ID2NAME(id) (id.str().substr(1))
@@ -28,28 +98,83 @@ bool in_list(const string &target, std::vector<string> &list)
 	return std::find(std::begin(list), std::end(list), target) != std::end(list);
 }
 
+const std::string log_signal_type(const RTLIL::SigSpec &sig) {
+	std::string s = std::to_string(sig.size());
+	if (sig.is_chunk())
+		s.append(" is_chunk");
+	if (sig.is_bit())
+		s.append(" is_bit");
+	if (sig.is_wire())
+		s.append(" is_wire");
+	if (sig.is_fully_const())
+		s.append(" is_fully_const");
+	if (sig.is_fully_ones())
+		s.append(" is_fully_ones");
+	if (sig.is_fully_zero())
+		s.append(" is_fully_zero");
+	if (sig.is_fully_def())
+		s.append(" is_fully_def");
+	if (sig.is_fully_undef())
+		s.append(" is_fully_undef");
+	if (sig.is_onehot())
+		s.append(" is_onehot");
+	
+	return s;
+}
+
+
 struct PIFTWorker {
 	bool verbose = false;
-	unsigned int taint_num = 1;
+	unsigned long taint_num = 1;
 	std::vector<string> ignore_ports;
 
-	void taint_port(RTLIL::Module *module)
-	{
-		bool done = module->get_bool_attribute(ID(pift_port_tainted));
+	std::vector<RTLIL::SigSpec> get_taint_signals(RTLIL::Module *module, const RTLIL::SigSpec &sig) {
+		std::vector<RTLIL::SigSpec> sig_t(taint_num);
+
+		if (verbose)
+			log("\t\tsignal %s %s\n", log_signal(sig, false), log_signal_type(sig).c_str());
+		
+		for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
+			for (auto &s: sig.chunks()) {
+				if (verbose)
+					log("\t\t\tsub-signal %s %s\n", log_signal(s, false), log_signal_type(s).c_str());
+
+				if (s.is_wire() && !in_list(s.wire->name.str(), ignore_ports)) {
+					RTLIL::Wire *w = module->wire(ID2NAMETaint(s.wire->name, taint_id));
+					if (w == nullptr) {
+						w = module->addWire(ID2NAMETaint(s.wire->name, taint_id), s.wire);
+						w->port_input = false;
+						w->port_output = false;
+					}
+					sig_t[taint_id].append(RTLIL::SigSpec(w, s.offset, s.width));
+				}
+				else {
+					sig_t[taint_id].append(RTLIL::SigSpec(RTLIL::Const(0, s.width)));
+				}
+			}
+		}
+
+		return sig_t;
+	}
+
+	void instrument_port(RTLIL::Module *module) {
+		bool done = module->get_bool_attribute(ID(pift_port_instrumented));
 		if (done)
 			return;
 
+		size_t port_count = 0;
 		for (auto w : module->wires().to_vector()) {
 			if (w->port_input && !in_list(ID2NAME(w->name), ignore_ports)) {
 				if (verbose)
-					log("\texpand input port: %s\n", w->name.c_str());
+					log("\t(p:%ld) instrument input port: %s\n", port_count++, w->name.c_str());
 				for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
 					RTLIL::Wire *w_t = module->addWire(ID2NAMETaint(w->name, taint_id), w->width);
 					w_t->port_input = true;
 				}
-			} else if (w->port_output && !in_list(ID2NAME(w->name), ignore_ports)) {
+			}
+			else if (w->port_output && !in_list(ID2NAME(w->name), ignore_ports)) {
 				if (verbose)
-					log("\texpand output port: %s\n", w->name.c_str());
+					log("\t(p:%ld) instrument output port: %s\n", port_count++, w->name.c_str());
 				for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
 					RTLIL::Wire *w_t = module->addWire(ID2NAMETaint(w->name, taint_id), w->width);
 					w_t->port_output = true;
@@ -57,11 +182,82 @@ struct PIFTWorker {
 			}
 		}
 		module->fixup_ports();
-		module->set_bool_attribute(ID(pift_port_tainted), true);
+		module->set_bool_attribute(ID(pift_port_instrumented), true);
+	}
+
+	void instrument_cell(RTLIL::Module *module) {
+		bool done = module->get_bool_attribute(ID(pift_cell_instrumented));
+		if (done)
+			return;
+		size_t cell_count = 0;
+		for (auto c : module->cells().to_vector()) {
+			if (verbose)
+				log("\t[c:%ld] instrument cell %s@%s\n", cell_count++, c->type.c_str(), c->name.c_str());
+			if (c->type.in(
+			      ID($not), ID($pos), ID($neg),
+			      ID($reduce_and), ID($reduce_or), ID($reduce_xor), ID($reduce_xnor), ID($reduce_bool),
+			      ID($logic_not))) {
+				enum PORT_NAME {A, Y, PORT_NUM};
+				RTLIL::SigSpec port[PORT_NUM] = {
+				  c->getPort(ID::A),
+				  c->getPort(ID::Y)
+				};
+				std::vector<RTLIL::SigSpec> port_taint[PORT_NUM] = {
+				  get_taint_signals(module, port[A]),
+				  get_taint_signals(module, port[Y])
+				};
+			}
+			else if (c->type.in(
+				   ID($and), ID($or), ID($xor), ID($xnor),
+				   ID($shift), ID($shiftx),
+				   ID($lt), ID($le), ID($eq), ID($ne), ID($eqx), ID($nex), ID($ge), ID($gt),
+				   ID($add), ID($sub), ID($mul), ID($div), ID($mod), ID($divfloor), ID($modfloor),
+				   ID($logic_and), ID($logic_or),
+				   ID($shl), ID($shr), ID($sshl), ID($sshr))) {
+				enum PORT_NAME {A, B, Y, PORT_NUM};
+				RTLIL::SigSpec port[PORT_NUM] = {
+				  c->getPort(ID::A),
+				  c->getPort(ID::B),
+				  c->getPort(ID::Y)
+				};
+				std::vector<RTLIL::SigSpec> port_taint[PORT_NUM] = {
+				  get_taint_signals(module, port[A]),
+				  get_taint_signals(module, port[B]),
+				  get_taint_signals(module, port[Y])
+				};
+			}
+			else if (c->type.in(ID($mux), ID($bwmux), ID($pmux))) {
+				enum PORT_NAME {A, B, S, Y, PORT_NUM};
+				RTLIL::SigSpec port[PORT_NUM] = {
+				  c->getPort(ID::A),
+				  c->getPort(ID::B),
+				  c->getPort(ID::S),
+				  c->getPort(ID::Y)
+				};
+				std::vector<RTLIL::SigSpec> port_taint[PORT_NUM] = {
+				  get_taint_signals(module, port[A]),
+				  get_taint_signals(module, port[B]),
+				  get_taint_signals(module, port[S]),
+				  get_taint_signals(module, port[Y])
+				};
+
+			}
+			else if (c->type.in(ID($dff), ID($dffe), ID($sdffe), ID($sdffce))) {
+
+			}
+		}
+
+		module->set_bool_attribute(ID(pift_cell_instrumented), true);
 	}
 
 	void instrument(RTLIL::Module *module) {
-		taint_port(module);
+		instrument_port(module);
+		instrument_cell(module);
+
+		// clean up
+//		for (auto w : module->wires().to_vector()) {
+//			printf("[>] %s\n", log_signal(w, false));
+//		}
 	}
 };
 
@@ -78,7 +274,7 @@ struct ProgrammableIFTPass : public Pass {
 				continue;
 			}
 			if (args[argidx] == "--taint-num") {
-				worker.taint_num = std::stoi(args[++argidx]);
+				worker.taint_num = std::stoul(args[++argidx]);
 				continue;
 			}
 			if (args[argidx] == "--ignore-ports") {
@@ -90,7 +286,7 @@ struct ProgrammableIFTPass : public Pass {
 		extra_args(args, argidx, design);
 
 		if (worker.verbose) {
-			log("[*] Taint Width: %d\n", worker.taint_num);
+			log("[*] Taint Width: %ld\n", worker.taint_num);
 			log("[*] Ignored Ports: ");
 			for (const auto &p : worker.ignore_ports)
 				log("%s ", p.c_str());
