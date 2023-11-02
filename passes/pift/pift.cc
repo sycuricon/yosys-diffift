@@ -2,74 +2,23 @@
 
 USING_YOSYS_NAMESPACE
 
-#define DEC_TAINT_METHOD(_func) 			\
-	extern RTLIL::Cell* add ## _func ## Taint(	\
-	  RTLIL::Module*,                 		\
-	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, \
-	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, \
-	  bool, const std::string&          		\
- 	);
+extern RTLIL::Cell *addTaintCell_1I1O(
+	RTLIL::Module *, const std::string &type, 
+	const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
+	const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
+	bool, const std::string &);
 
-DEC_TAINT_METHOD(Not)
-DEC_TAINT_METHOD(Pos)
-DEC_TAINT_METHOD(Neg)
-DEC_TAINT_METHOD(ReduceAnd)
-DEC_TAINT_METHOD(ReduceOr)
-DEC_TAINT_METHOD(ReduceXor)
-DEC_TAINT_METHOD(ReduceXnor)
-DEC_TAINT_METHOD(ReduceBool)
-DEC_TAINT_METHOD(LogicNot)
-#undef DEC_TAINT_METHOD
+extern RTLIL::Cell *addTaintCell_2I1O(
+	RTLIL::Module *, const std::string &,
+	const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &,
+	const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
+	bool, const std::string &);
 
-#define DEC_TAINT_METHOD(_func)							\
-	extern RTLIL::Cell* add ## _func ## Taint(				\
-	  RTLIL::Module*,							\
-	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&,	\
-	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&,	\
-	  bool is_signed, const std::string &src				\
- 	);
-
-DEC_TAINT_METHOD(And)
-DEC_TAINT_METHOD(Or)
-DEC_TAINT_METHOD(Xor)
-DEC_TAINT_METHOD(Xnor)
-DEC_TAINT_METHOD(Shift)
-DEC_TAINT_METHOD(Shiftx)
-DEC_TAINT_METHOD(Lt)
-DEC_TAINT_METHOD(Le)
-DEC_TAINT_METHOD(Eq)
-DEC_TAINT_METHOD(Ne)
-DEC_TAINT_METHOD(Eqx)
-DEC_TAINT_METHOD(Nex)
-DEC_TAINT_METHOD(Ge)
-DEC_TAINT_METHOD(Gt)
-DEC_TAINT_METHOD(Add)
-DEC_TAINT_METHOD(Sub)
-DEC_TAINT_METHOD(Mul)
-DEC_TAINT_METHOD(Div)
-DEC_TAINT_METHOD(Mod)
-DEC_TAINT_METHOD(DivFloor)
-DEC_TAINT_METHOD(ModFloor)
-DEC_TAINT_METHOD(LogicAnd)
-DEC_TAINT_METHOD(LogicOr)
-DEC_TAINT_METHOD(Shl)
-DEC_TAINT_METHOD(Shr)
-DEC_TAINT_METHOD(Sshl)
-DEC_TAINT_METHOD(Sshr)
-#undef DEC_TAINT_METHOD
-
-#define DEC_TAINT_METHOD(_func)										\
-	extern RTLIL::Cell* add ## _func ## Taint(							\
-	  RTLIL::Module*,										\
-	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&,	\
-	  const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&, const RTLIL::SigSpec&,	\
-	  const std::string &src									\
- 	);
-
-DEC_TAINT_METHOD(Mux)
-DEC_TAINT_METHOD(Bwmux)
-DEC_TAINT_METHOD(Pmux)
-#undef DEC_TAINT_METHOD
+extern RTLIL::Cell *addTaintCell_Mux(
+	RTLIL::Module *module, const std::string &type,
+	const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
+	const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
+	const std::string &);
 
 PRIVATE_NAMESPACE_BEGIN
 
@@ -167,7 +116,7 @@ struct PIFTWorker {
 			if (w->port_input && !in_list(ID2NAME(w->name), ignore_ports)) {
 				if (verbose)
 					log("\t(p:%ld) instrument input port: %s\n", port_count++, w->name.c_str());
-				for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
 					RTLIL::Wire *w_t = module->addWire(ID2NAMETaint(w->name, taint_id), w->width);
 					w_t->port_input = true;
 				}
@@ -175,7 +124,7 @@ struct PIFTWorker {
 			else if (w->port_output && !in_list(ID2NAME(w->name), ignore_ports)) {
 				if (verbose)
 					log("\t(p:%ld) instrument output port: %s\n", port_count++, w->name.c_str());
-				for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
 					RTLIL::Wire *w_t = module->addWire(ID2NAMETaint(w->name, taint_id), w->width);
 					w_t->port_output = true;
 				}
@@ -206,6 +155,14 @@ struct PIFTWorker {
 				  get_taint_signals(module, port[A]),
 				  get_taint_signals(module, port[Y])
 				};
+				
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
+					addTaintCell_1I1O(
+						module, c->type.str(), 
+						port[A], port[Y], 
+						port_taint[A][taint_id], port_taint[Y][taint_id], 
+						c->getParam(ID::A_SIGNED).as_bool(), c->get_src_attribute());
+				}
 			}
 			else if (c->type.in(
 				   ID($and), ID($or), ID($xor), ID($xnor),
@@ -225,6 +182,16 @@ struct PIFTWorker {
 				  get_taint_signals(module, port[B]),
 				  get_taint_signals(module, port[Y])
 				};
+
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
+					addTaintCell_2I1O(
+						module, c->type.str(), 
+						port[A], port[B], port[Y], 
+						port_taint[A][taint_id], port_taint[B][taint_id], port_taint[Y][taint_id], 
+						c->getParam(ID::A_SIGNED).as_bool() || c->getParam(ID::B_SIGNED).as_bool(), 
+						c->get_src_attribute());
+				}
+
 			}
 			else if (c->type.in(ID($mux), ID($bwmux), ID($pmux))) {
 				enum PORT_NAME {A, B, S, Y, PORT_NUM};
@@ -240,6 +207,14 @@ struct PIFTWorker {
 				  get_taint_signals(module, port[S]),
 				  get_taint_signals(module, port[Y])
 				};
+
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
+					addTaintCell_Mux(
+						module, c->type.str(), 
+						port[A], port[B], port[S], port[Y], 
+						port_taint[A][taint_id], port_taint[B][taint_id], port_taint[S][taint_id], port_taint[Y][taint_id], 
+						c->get_src_attribute());
+				}
 
 			}
 			else if (c->type.in(ID($dff), ID($dffe), ID($sdffe), ID($sdffce))) {
