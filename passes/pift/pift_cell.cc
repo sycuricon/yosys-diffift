@@ -45,7 +45,7 @@ RTLIL::Cell *addTaintCell_2I1O(
 	return cell;
 }
 
-RTLIL::Cell *addTaintCell_Mux(
+RTLIL::Cell *addTaintCell_mux(
 	RTLIL::Module *module, const std::string &type,
 	const RTLIL::SigSpec &sig_a, const RTLIL::SigSpec &sig_b, const RTLIL::SigSpec &sig_s, const RTLIL::SigSpec &sig_y, 
 	const RTLIL::SigSpec &sig_a_t, const RTLIL::SigSpec &sig_b_t, const RTLIL::SigSpec &sig_s_t, const RTLIL::SigSpec &sig_y_t, 

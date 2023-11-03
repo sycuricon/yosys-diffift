@@ -14,7 +14,7 @@ extern RTLIL::Cell *addTaintCell_2I1O(
 	const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
 	bool, const std::string &);
 
-extern RTLIL::Cell *addTaintCell_Mux(
+extern RTLIL::Cell *addTaintCell_mux(
 	RTLIL::Module *module, const std::string &type,
 	const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
 	const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
@@ -23,7 +23,7 @@ extern RTLIL::Cell *addTaintCell_Mux(
 PRIVATE_NAMESPACE_BEGIN
 
 #define ID2NAME(id) (id.str().substr(1))
-#define NameTaint(id, t_id) (id.str() + "_t_" + std::to_string(t_id))
+#define NameTaint(id, t_id) (id.str() + "_taint_" + std::to_string(t_id))
 #define NameTaint_1_ARGS(id) NameTaint(id, 0)
 #define NameTaint_2_ARGS(id, t_id) NameTaint(id, t_id)
 #define __NameTaint_GET_3TH_ARG(arg1, arg2, arg3, ...) arg3
@@ -208,7 +208,7 @@ struct PIFTWorker {
 				};
 
 				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
-					addTaintCell_Mux(
+					addTaintCell_mux(
 						module, c->type.str(), 
 						port[A], port[B], port[S], port[Y], 
 						port_taint[A][taint_id], port_taint[B][taint_id], port_taint[S][taint_id], port_taint[Y][taint_id], 
@@ -221,8 +221,10 @@ struct PIFTWorker {
 			// }
 			else if (module->design->module(c->type) != nullptr) {
 				RTLIL::Module *cell_module_def = module->design->module(c->type);
+
 				instrument_port(cell_module_def);
-				for (auto &it : c->connections()) {
+
+				for (auto &it : dict<RTLIL::IdString, RTLIL::SigSpec> {c->connections()}) {
 					if (in_list(ID2NAME(it.first), ignore_ports))
 						continue;
 
@@ -245,11 +247,9 @@ struct PIFTWorker {
 	void instrument_wire(RTLIL::Module *module) {
 		if (module->get_bool_attribute(ID(pift_wire_instrumented)))
 			return;
-		
-		std::vector<SigSig> taint_conns;
-		
+				
 		size_t wire_count = 0;
-		for (auto &conn : module->connections()) {
+		for (auto &conn : std::vector<RTLIL::SigSig> {module->connections()}) {
 			if (verbose)
 				log("\t-w:%ld- instrument wire <%s> to <%s>\n", 
 					wire_count++, 
@@ -261,13 +261,9 @@ struct PIFTWorker {
 			std::vector<RTLIL::SigSpec> rvalue = get_taint_signals(module, conn.second);
 
 			for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
-				taint_conns.push_back(RTLIL::SigSig(lvalue[taint_id], rvalue[taint_id]));
+				module->connect(lvalue[taint_id], rvalue[taint_id]);
 			}	
 		}
-
-		for_each(taint_conns.begin(), taint_conns.end(), [module](SigSig &tc) {
-			module->connect(tc.first, tc.second);
-		});
 
 		module->set_bool_attribute(ID(pift_wire_instrumented), true);
 	}
