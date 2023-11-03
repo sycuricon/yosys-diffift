@@ -44,6 +44,21 @@ extern RTLIL::Cell* addTaintCell_dffe(
 	const RTLIL::SigSpec &sig_en_t, const RTLIL::SigSpec &sig_d_t, const RTLIL::SigSpec &sig_q_t,
 	bool clk_polarity, bool en_polarity, const std::string &src);
 
+extern RTLIL::Cell* addTaintCell_mem(
+	RTLIL::Module *module, RTLIL::Cell *origin, 
+	const RTLIL::SigSpec &sig_rd_clk, const RTLIL::SigSpec &sig_rd_en, const RTLIL::SigSpec &sig_rd_arst, const RTLIL::SigSpec &sig_rd_srst, const RTLIL::SigSpec &sig_rd_addr, const RTLIL::SigSpec &sig_rd_data,
+	const RTLIL::SigSpec &sig_wr_clk, const RTLIL::SigSpec &sig_wr_en, const RTLIL::SigSpec &sig_wr_addr, const RTLIL::SigSpec &sig_wr_data,
+	const RTLIL::SigSpec &sig_rd_en_t, const RTLIL::SigSpec &sig_rd_addr_t, const RTLIL::SigSpec &sig_rd_data_t,
+	const RTLIL::SigSpec &sig_wr_en_t, const RTLIL::SigSpec &sig_wr_addr_t, const RTLIL::SigSpec &sig_wr_data_t);
+
+extern void addTaintCell_adff(
+	RTLIL::Module *module, RTLIL::Cell *origin, 
+	const RTLIL::SigSpec &sig_d_t, const RTLIL::SigSpec &sig_q_t);
+
+extern void addTaintCell_sdffce(
+	RTLIL::Module *module, RTLIL::Cell *origin,
+	const RTLIL::SigSpec &sig_en_t, const RTLIL::SigSpec &sig_d_t, const RTLIL::SigSpec &sig_q_t);
+
 PRIVATE_NAMESPACE_BEGIN
 
 #define ID2NAME(id) (id.str().substr(1))
@@ -289,6 +304,29 @@ struct PIFTWorker {
 						c->getParam(ID(SRST_VALUE)), c->getParam(ID(CLK_POLARITY)).as_bool(), c->getParam(ID(EN_POLARITY)).as_bool(), c->getParam(ID(SRST_POLARITY)).as_bool(), c->get_src_attribute());
 				}
 			}
+			else if (c->type.in(ID($sdffce))) {
+				enum PORT_NAME {CLK, SRST, EN, D, Q, PORT_NUM};
+			    RTLIL::SigSpec port[PORT_NUM] = {
+					c->getPort(ID::CLK),
+					c->getPort(ID::SRST),
+					c->getPort(ID::EN),
+					c->getPort(ID::D),
+					c->getPort(ID::Q)
+				};
+				std::vector<RTLIL::SigSpec> port_taint[PORT_NUM] = {
+				  get_taint_signals(module, port[CLK]),
+				  get_taint_signals(module, port[SRST]),
+				  get_taint_signals(module, port[EN]),
+				  get_taint_signals(module, port[D]),
+				  get_taint_signals(module, port[Q])
+				};
+
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
+					addTaintCell_sdffce(
+						module, c,
+						port_taint[EN][taint_id], port_taint[D][taint_id], port_taint[Q][taint_id]);
+				}
+			}
 			else if (c->type.in(ID($dff))) {
 				enum PORT_NAME {CLK, D, Q, PORT_NUM};
 			    RTLIL::SigSpec port[PORT_NUM] = {
@@ -329,6 +367,58 @@ struct PIFTWorker {
 						module, port[CLK], port[EN], port[D], port[Q],
 						port_taint[EN][taint_id], port_taint[D][taint_id], port_taint[Q][taint_id],
 						c->getParam(ID(CLK_POLARITY)).as_bool(), c->getParam(ID(EN_POLARITY)).as_bool(), c->get_src_attribute());
+				}
+			}
+			else if (c->type.in(ID($adff))) {
+				enum PORT_NAME {CLK, ARST, D, Q, PORT_NUM};
+				std::vector<RTLIL::SigSpec> port_taint[PORT_NUM] = {
+					get_taint_signals(module, c->getPort(ID::CLK)),
+					get_taint_signals(module, c->getPort(ID::ARST)),
+					get_taint_signals(module, c->getPort(ID::D)),
+					get_taint_signals(module, c->getPort(ID::Q))
+				};
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
+					addTaintCell_adff(module, c, port_taint[D][taint_id], port_taint[Q][taint_id]);
+				}
+			}
+			else if (c->type.in(ID($mem_v2))) {
+				enum PORT_NAME {
+					RD_CLK, RD_EN, RD_ARST, RD_SRST, RD_ADDR, RD_DATA,
+					WR_CLK, WR_EN, WR_ADDR, WR_DATA,
+					PORT_NUM
+				};
+			    RTLIL::SigSpec port[PORT_NUM] = {
+					c->getPort(ID::RD_CLK),
+					c->getPort(ID::RD_EN),
+					c->getPort(ID::RD_ARST),
+					c->getPort(ID::RD_SRST),
+					c->getPort(ID::RD_ADDR),
+					c->getPort(ID::RD_DATA),
+					c->getPort(ID::WR_CLK),
+					c->getPort(ID::WR_EN),
+					c->getPort(ID::WR_ADDR),
+					c->getPort(ID::WR_DATA)
+				};
+				std::vector<RTLIL::SigSpec> port_taint[PORT_NUM] = {
+				  get_taint_signals(module, port[RD_CLK]),
+				  get_taint_signals(module, port[RD_EN]),
+				  get_taint_signals(module, port[RD_ARST]),
+				  get_taint_signals(module, port[RD_SRST]),
+				  get_taint_signals(module, port[RD_ADDR]),
+				  get_taint_signals(module, port[RD_DATA]),
+				  get_taint_signals(module, port[WR_CLK]),
+				  get_taint_signals(module, port[WR_EN]),
+				  get_taint_signals(module, port[WR_ADDR]),
+				  get_taint_signals(module, port[WR_DATA])
+				};
+
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
+					addTaintCell_mem(
+						module, c,
+						port[RD_CLK], port[RD_EN], port[RD_ARST], port[RD_SRST], port[RD_ADDR], port[RD_DATA],
+						port[WR_CLK], port[WR_EN], port[WR_ADDR], port[WR_DATA],
+						port_taint[RD_EN][taint_id], port_taint[RD_ADDR][taint_id], port_taint[RD_DATA][taint_id],
+						port_taint[WR_EN][taint_id], port_taint[WR_ADDR][taint_id], port_taint[WR_DATA][taint_id]);
 				}
 			}
 

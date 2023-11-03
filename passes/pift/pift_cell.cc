@@ -111,6 +111,38 @@ RTLIL::Cell* addTaintCell_sdffe(
 	return cell;
 }
 
+void addTaintCell_sdffce(
+	RTLIL::Module *module, RTLIL::Cell *origin,
+	const RTLIL::SigSpec &sig_en_t, const RTLIL::SigSpec &sig_d_t, const RTLIL::SigSpec &sig_q_t) {
+	RTLIL::Cell *cell = module->addCell(NEW_ID, ID(taintcell_sdffce));
+	cell->parameters = origin->parameters;
+	cell->setPort(ID::CLK, origin->getPort(ID::CLK));
+	cell->setPort(ID::SRST, origin->getPort(ID::SRST));
+	cell->setPort(ID::EN, origin->getPort(ID::EN));
+	cell->setPort(ID::D, origin->getPort(ID::D));
+	cell->setPort(ID::Q, origin->getPort(ID::Q));
+	cell->setPort(ID(EN_t), sig_en_t);
+	cell->setPort(ID(D_t), sig_d_t);
+	cell->setPort(ID(Q_t), sig_q_t);
+	cell->set_src_attribute(origin->get_src_attribute());
+	cell->set_bool_attribute(ID(tainted), true);
+}
+
+void addTaintCell_adff(
+	RTLIL::Module *module, RTLIL::Cell *origin, 
+	const RTLIL::SigSpec &sig_d_t, const RTLIL::SigSpec &sig_q_t) {
+	RTLIL::Cell *cell = module->addCell(NEW_ID, ID(taintcell_adff));
+	cell->parameters = origin->parameters;
+	cell->setPort(ID::CLK, origin->getPort(ID::CLK));
+	cell->setPort(ID::ARST, origin->getPort(ID::ARST));
+	cell->setPort(ID::D, origin->getPort(ID::D));
+	cell->setPort(ID::Q, origin->getPort(ID::Q));
+	cell->setPort(ID(D_t), sig_d_t);
+	cell->setPort(ID(Q_t), sig_q_t);
+	cell->set_src_attribute(origin->get_src_attribute());
+	cell->set_bool_attribute(ID(tainted), true);
+}
+
 RTLIL::Cell* addTaintCell_dff(
 	RTLIL::Module *module, 
 	const RTLIL::SigSpec &sig_clk, const RTLIL::SigSpec &sig_d, const RTLIL::SigSpec &sig_q,
@@ -146,6 +178,36 @@ RTLIL::Cell* addTaintCell_dffe(
 	cell->setPort(ID(D_t), sig_d_t);
 	cell->setPort(ID(Q_t), sig_q_t);
 	cell->set_src_attribute(src);
+	cell->set_bool_attribute(ID(tainted), true);
+	return cell;
+}
+
+RTLIL::Cell* addTaintCell_mem(
+	RTLIL::Module *module, RTLIL::Cell *origin, 
+	const RTLIL::SigSpec &sig_rd_clk, const RTLIL::SigSpec &sig_rd_en, const RTLIL::SigSpec &sig_rd_arst, const RTLIL::SigSpec &sig_rd_srst, const RTLIL::SigSpec &sig_rd_addr, const RTLIL::SigSpec &sig_rd_data,
+	const RTLIL::SigSpec &sig_wr_clk, const RTLIL::SigSpec &sig_wr_en, const RTLIL::SigSpec &sig_wr_addr, const RTLIL::SigSpec &sig_wr_data,
+	const RTLIL::SigSpec &sig_rd_en_t, const RTLIL::SigSpec &sig_rd_addr_t, const RTLIL::SigSpec &sig_rd_data_t,
+	const RTLIL::SigSpec &sig_wr_en_t, const RTLIL::SigSpec &sig_wr_addr_t, const RTLIL::SigSpec &sig_wr_data_t) {
+
+	RTLIL::Cell *cell = module->addCell(NEW_ID, ID(taintcell_mem));
+	cell->parameters = origin->parameters;
+	cell->setPort(ID::RD_CLK, sig_rd_clk);
+	cell->setPort(ID::RD_EN, sig_rd_en);
+	cell->setPort(ID::RD_ARST, sig_rd_arst);
+	cell->setPort(ID::RD_SRST, sig_rd_srst);
+	cell->setPort(ID::RD_ADDR, sig_rd_addr);
+	cell->setPort(ID::RD_DATA, sig_rd_data);
+	cell->setPort(ID::WR_CLK, sig_wr_clk);
+	cell->setPort(ID::WR_EN, sig_wr_en);
+	cell->setPort(ID::WR_ADDR, sig_wr_addr);
+	cell->setPort(ID::WR_DATA, sig_wr_data);
+	cell->setPort(ID(RD_EN_t), sig_rd_en_t);
+	cell->setPort(ID(RD_ADDR_t), sig_rd_addr_t);
+	cell->setPort(ID(RD_DATA_t), sig_rd_data_t);
+	cell->setPort(ID(WR_EN_t), sig_wr_en_t);
+	cell->setPort(ID(WR_ADDR_t), sig_wr_addr_t);
+	cell->setPort(ID(WR_DATA_t), sig_wr_data_t);
+	cell->set_src_attribute(origin->get_src_attribute());
 	cell->set_bool_attribute(ID(tainted), true);
 	return cell;
 }
