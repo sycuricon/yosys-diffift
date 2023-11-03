@@ -3,22 +3,46 @@
 USING_YOSYS_NAMESPACE
 
 extern RTLIL::Cell *addTaintCell_1I1O(
-	RTLIL::Module *, const std::string &type, 
-	const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
-	const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
-	bool, const std::string &);
+	RTLIL::Module *module, const std::string &type,
+	const RTLIL::SigSpec &sig_a, const RTLIL::SigSpec &sig_y, 
+	const RTLIL::SigSpec &sig_a_t, const RTLIL::SigSpec &sig_y_t, 
+	bool is_signed, const std::string &src);
 
 extern RTLIL::Cell *addTaintCell_2I1O(
-	RTLIL::Module *, const std::string &,
-	const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &,
-	const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
-	bool, const std::string &);
+	RTLIL::Module *module, const std::string &type,
+	const RTLIL::SigSpec &sig_a, const RTLIL::SigSpec &sig_b, const RTLIL::SigSpec &sig_y,
+	const RTLIL::SigSpec &sig_a_t, const RTLIL::SigSpec &sig_b_t, const RTLIL::SigSpec &sig_y_t, 
+	bool is_signed, const std::string &src);
 
 extern RTLIL::Cell *addTaintCell_mux(
 	RTLIL::Module *module, const std::string &type,
-	const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
-	const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, const RTLIL::SigSpec &, 
-	const std::string &);
+	const RTLIL::SigSpec &sig_a, const RTLIL::SigSpec &sig_b, const RTLIL::SigSpec &sig_s, const RTLIL::SigSpec &sig_y, 
+	const RTLIL::SigSpec &sig_a_t, const RTLIL::SigSpec &sig_b_t, const RTLIL::SigSpec &sig_s_t, const RTLIL::SigSpec &sig_y_t, 
+	const std::string &src);
+
+extern RTLIL::Cell* addTaintCell_sdff(
+	RTLIL::Module *module, 
+	const RTLIL::SigSpec &sig_clk, const RTLIL::SigSpec &sig_srst, const RTLIL::SigSpec &sig_d, const RTLIL::SigSpec &sig_q,
+	const RTLIL::SigSpec &sig_d_t, const RTLIL::SigSpec &sig_q_t,
+	RTLIL::Const srst_value, bool clk_polarity, bool srst_polarity, const std::string &src);
+
+extern RTLIL::Cell* addTaintCell_sdffe(
+	RTLIL::Module *module, 
+	const RTLIL::SigSpec &sig_clk, const RTLIL::SigSpec &sig_srst, const RTLIL::SigSpec &sig_en, const RTLIL::SigSpec &sig_d, const RTLIL::SigSpec &sig_q,
+	const RTLIL::SigSpec &sig_en_t, const RTLIL::SigSpec &sig_d_t, const RTLIL::SigSpec &sig_q_t,
+	RTLIL::Const srst_value, bool clk_polarity, bool en_polarity, bool srst_polarity, const std::string &src);
+
+extern RTLIL::Cell* addTaintCell_dff(
+	RTLIL::Module *module, 
+	const RTLIL::SigSpec &sig_clk, const RTLIL::SigSpec &sig_d, const RTLIL::SigSpec &sig_q,
+	const RTLIL::SigSpec &sig_d_t, const RTLIL::SigSpec &sig_q_t,
+	bool clk_polarity, const std::string &src);
+
+extern RTLIL::Cell* addTaintCell_dffe(
+	RTLIL::Module *module, 
+	const RTLIL::SigSpec &sig_clk, const RTLIL::SigSpec &sig_en, const RTLIL::SigSpec &sig_d, const RTLIL::SigSpec &sig_q,
+	const RTLIL::SigSpec &sig_en_t, const RTLIL::SigSpec &sig_d_t, const RTLIL::SigSpec &sig_q_t,
+	bool clk_polarity, bool en_polarity, const std::string &src);
 
 PRIVATE_NAMESPACE_BEGIN
 
@@ -140,7 +164,9 @@ struct PIFTWorker {
 		size_t cell_count = 0;
 		for (auto c : module->cells().to_vector()) {
 			if (verbose)
-				log("\t[c:%ld] instrument cell %s@%s\n", cell_count++, c->type.c_str(), c->name.c_str());
+				log("\t[c:%ld] instrument cell %s@%s from %s\n", cell_count++, c->type.c_str(), c->name.c_str(), c->get_src_attribute().c_str());
+			
+			// gate
 			if (c->type.in(
 			      ID($not), ID($pos), ID($neg),
 			      ID($reduce_and), ID($reduce_or), ID($reduce_xor), ID($reduce_xnor), ID($reduce_bool),
@@ -214,11 +240,99 @@ struct PIFTWorker {
 						port_taint[A][taint_id], port_taint[B][taint_id], port_taint[S][taint_id], port_taint[Y][taint_id], 
 						c->get_src_attribute());
 				}
-
 			}
-			// else if (c->type.in(ID($dff), ID($dffe), ID($sdffe), ID($sdffce))) {
 
-			// }
+			// flip-flop
+			else if (c->type.in(ID($sdff))) {
+				enum PORT_NAME {CLK, SRST, D, Q, PORT_NUM};
+			    RTLIL::SigSpec port[PORT_NUM] = {
+					c->getPort(ID::CLK),
+					c->getPort(ID::SRST),
+					c->getPort(ID::D),
+					c->getPort(ID::Q)
+				};
+				std::vector<RTLIL::SigSpec> port_taint[PORT_NUM] = {
+				  get_taint_signals(module, port[CLK]),
+				  get_taint_signals(module, port[SRST]),
+				  get_taint_signals(module, port[D]),
+				  get_taint_signals(module, port[Q])
+				};
+
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
+					addTaintCell_sdff(
+						module, port[CLK], port[SRST], port[D], port[Q],
+						port_taint[D][taint_id], port_taint[Q][taint_id],
+						c->getParam(ID(SRST_VALUE)), c->getParam(ID(CLK_POLARITY)).as_bool(), c->getParam(ID(SRST_POLARITY)).as_bool(), c->get_src_attribute());
+				}
+			}
+			else if (c->type.in(ID($sdffe))) {
+				enum PORT_NAME {CLK, SRST, EN, D, Q, PORT_NUM};
+			    RTLIL::SigSpec port[PORT_NUM] = {
+					c->getPort(ID::CLK),
+					c->getPort(ID::SRST),
+					c->getPort(ID::EN),
+					c->getPort(ID::D),
+					c->getPort(ID::Q)
+				};
+				std::vector<RTLIL::SigSpec> port_taint[PORT_NUM] = {
+				  get_taint_signals(module, port[CLK]),
+				  get_taint_signals(module, port[SRST]),
+				  get_taint_signals(module, port[EN]),
+				  get_taint_signals(module, port[D]),
+				  get_taint_signals(module, port[Q])
+				};
+
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
+					addTaintCell_sdffe(
+						module, port[CLK], port[SRST], port[EN], port[D], port[Q],
+						port_taint[EN][taint_id], port_taint[D][taint_id], port_taint[Q][taint_id],
+						c->getParam(ID(SRST_VALUE)), c->getParam(ID(CLK_POLARITY)).as_bool(), c->getParam(ID(EN_POLARITY)).as_bool(), c->getParam(ID(SRST_POLARITY)).as_bool(), c->get_src_attribute());
+				}
+			}
+			else if (c->type.in(ID($dff))) {
+				enum PORT_NAME {CLK, D, Q, PORT_NUM};
+			    RTLIL::SigSpec port[PORT_NUM] = {
+					c->getPort(ID::CLK),
+					c->getPort(ID::D),
+					c->getPort(ID::Q)
+				};
+				std::vector<RTLIL::SigSpec> port_taint[PORT_NUM] = {
+				  get_taint_signals(module, port[CLK]),
+				  get_taint_signals(module, port[D]),
+				  get_taint_signals(module, port[Q])
+				};
+
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
+					addTaintCell_dff(
+						module, port[CLK], port[D], port[Q],
+						port_taint[D][taint_id], port_taint[Q][taint_id],
+						c->getParam(ID(CLK_POLARITY)).as_bool(), c->get_src_attribute());
+				}
+			}
+			else if (c->type.in(ID($dffe))) {
+				enum PORT_NAME {CLK, EN, D, Q, PORT_NUM};
+			    RTLIL::SigSpec port[PORT_NUM] = {
+					c->getPort(ID::CLK),
+					c->getPort(ID::EN),
+					c->getPort(ID::D),
+					c->getPort(ID::Q)
+				};
+				std::vector<RTLIL::SigSpec> port_taint[PORT_NUM] = {
+				  get_taint_signals(module, port[CLK]),
+				  get_taint_signals(module, port[EN]),
+				  get_taint_signals(module, port[D]),
+				  get_taint_signals(module, port[Q])
+				};
+
+				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
+					addTaintCell_dffe(
+						module, port[CLK], port[EN], port[D], port[Q],
+						port_taint[EN][taint_id], port_taint[D][taint_id], port_taint[Q][taint_id],
+						c->getParam(ID(CLK_POLARITY)).as_bool(), c->getParam(ID(EN_POLARITY)).as_bool(), c->get_src_attribute());
+				}
+			}
+
+			// module
 			else if (module->design->module(c->type) != nullptr) {
 				RTLIL::Module *cell_module_def = module->design->module(c->type);
 
