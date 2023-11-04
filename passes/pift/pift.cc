@@ -32,31 +32,6 @@ bool in_list(const string &target, std::vector<string> &list)
 	return std::find(std::begin(list), std::end(list), target) != std::end(list);
 }
 
-const std::string log_signal_type(const RTLIL::SigSpec &sig) {
-	std::string s = std::to_string(sig.size());
-	if (sig.is_chunk())
-		s.append(" is_chunk");
-	if (sig.is_bit())
-		s.append(" is_bit");
-	if (sig.is_wire())
-		s.append(" is_wire");
-	if (sig.is_fully_const())
-		s.append(" is_fully_const");
-	if (sig.is_fully_ones())
-		s.append(" is_fully_ones");
-	if (sig.is_fully_zero())
-		s.append(" is_fully_zero");
-	if (sig.is_fully_def())
-		s.append(" is_fully_def");
-	if (sig.is_fully_undef())
-		s.append(" is_fully_undef");
-	if (sig.is_onehot())
-		s.append(" is_onehot");
-	
-	return s;
-}
-
-
 struct PIFTWorker {
 	bool verbose = false;
 	unsigned long taint_num = 1;
@@ -79,14 +54,13 @@ struct PIFTWorker {
 		std::vector<RTLIL::SigSpec> sig_t(taint_num);
 
 		if (verbose)
-			log("\t\tsignal %s %s\n", log_signal(sig, false), log_signal_type(sig).c_str());
+			log("\t\tgenerate taint signal for %s\n", log_signal(sig, false));
 		
 		for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
 			for (auto &s: sig.chunks()) {
-				if (verbose)
-					log("\t\t\tsub-signal %s %s\n", log_signal(s, false), log_signal_type(s).c_str());
-
 				if (s.is_wire() && !in_list(ID2NAME(s.wire->name), ignore_ports)) {
+					if (verbose)
+						log("\t\t\t%s @%s\n", log_signal(s, false), s.wire->get_src_attribute().c_str());
 					RTLIL::Wire *w = module->wire(ID2NAMETaint(s.wire->name, taint_id));
 					if (w == nullptr) {
 						w = module->addWire(ID2NAMETaint(s.wire->name, taint_id), s.wire);
@@ -112,7 +86,11 @@ struct PIFTWorker {
 		for (auto w : module->wires().to_vector()) {
 			if (w->port_input && !in_list(ID2NAME(w->name), ignore_ports)) {
 				if (verbose)
-					log("\t(p:%ld) instrument input port: %s\n", port_count++, w->name.c_str());
+					log("\t(p:%ld) instrument input port: %s @%s\n", 
+						port_count++,
+						w->name.c_str(),
+						w->get_src_attribute().c_str()
+					);
 				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
 					RTLIL::Wire *w_t = module->addWire(ID2NAMETaint(w->name, taint_id), w->width);
 					w_t->port_input = true;
@@ -120,7 +98,11 @@ struct PIFTWorker {
 			}
 			else if (w->port_output && !in_list(ID2NAME(w->name), ignore_ports)) {
 				if (verbose)
-					log("\t(p:%ld) instrument output port: %s\n", port_count++, w->name.c_str());
+					log("\t(p:%ld) instrument output port: %s @%s\n", 
+						port_count++, 
+						w->name.c_str(),
+						w->get_src_attribute().c_str()
+					);
 				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
 					RTLIL::Wire *w_t = module->addWire(ID2NAMETaint(w->name, taint_id), w->width);
 					w_t->port_output = true;
@@ -138,9 +120,13 @@ struct PIFTWorker {
 		size_t cell_count = 0;
 		for (auto c : module->cells().to_vector()) {
 			if (verbose)
-				log("\t[c:%ld] instrument cell %s@%s from %s\n", cell_count++, c->type.c_str(), c->name.c_str(), c->get_src_attribute().c_str());
+				log("\t[c:%ld] instrument cell %s instance %s @%s\n", 
+					cell_count++, 
+					c->type.c_str(), 
+					c->name.c_str(), 
+					c->get_src_attribute().c_str()
+				);
 			
-			// gate
 			if (c->type.in(
 			      ID($not), ID($pos), ID($neg),
 			      ID($reduce_and), ID($reduce_or), ID($reduce_xor), ID($reduce_xnor), ID($reduce_bool),
@@ -148,22 +134,20 @@ struct PIFTWorker {
 				addTaintCell_1I1O(module, c);
 			else if (c->type.in(
 				   ID($and), ID($or), ID($xor), ID($xnor),
-				   ID($shift), ID($shiftx),
 				   ID($lt), ID($le), ID($eq), ID($ne), ID($eqx), ID($nex), ID($ge), ID($gt),
 				   ID($add), ID($sub), ID($mul), ID($div), ID($mod), ID($divfloor), ID($modfloor),
 				   ID($logic_and), ID($logic_or),
-				   ID($shl), ID($shr), ID($sshl), ID($sshr)))
+				   ID($shift), ID($shiftx), ID($shl), ID($shr), ID($sshl), ID($sshr)))
 				addTaintCell_2I1O(module, c);
 			else if (c->type.in(ID($mux), ID($bwmux), ID($pmux)))
 				addTaintCell_mux(module, c);
 
-			// flip-flop
 			else if (c->type.in(ID($dff), ID($sdff), ID($adff), ID($dffe), ID($sdffe), ID($sdffce)))
 				addTaintCell_dff(module, c);
+
 			else if (c->type.in(ID($mem_v2)))
 				addTaintCell_mem(module, c);
 
-			// module
 			else if (module->design->module(c->type) != nullptr) {
 				RTLIL::Module *cell_module_def = module->design->module(c->type);
 				instrument_port(cell_module_def);
@@ -173,7 +157,7 @@ struct PIFTWorker {
 						continue;
 
 					if (verbose)
-						log("\t\tinst port %s %s %s\n", it.first.c_str(), log_signal(it.second, false), log_signal_type(it.second).c_str());
+						log("\t\tinst port %s %s\n", it.first.c_str(), log_signal(it.second, false));
 
 					std::vector<RTLIL::SigSpec> port_taint = get_taint_signals(module, it.second);
 					for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
@@ -195,7 +179,7 @@ struct PIFTWorker {
 		size_t wire_count = 0;
 		for (auto &conn : std::vector<RTLIL::SigSig> {module->connections()}) {
 			if (verbose)
-				log("\t-w:%ld- instrument wire <%s> to <%s>\n", 
+				log("\t-w:%ld- instrument connection from %s to %s\n", 
 					wire_count++, 
 					log_signal(conn.first, false), 
 					log_signal(conn.second, false)
