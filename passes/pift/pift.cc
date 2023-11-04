@@ -84,28 +84,18 @@ struct PIFTWorker {
 
 		size_t port_count = 0;
 		for (auto w : module->wires().to_vector()) {
-			if (w->port_input && !in_list(ID2NAME(w->name), ignore_ports)) {
+			if ((w->port_input || w->port_output) && !in_list(ID2NAME(w->name), ignore_ports)) {
 				if (verbose)
-					log("\t(p:%ld) instrument input port: %s @%s\n", 
+					log("\t(p:%ld) instrument %s port: %s @%s\n", 
 						port_count++,
+						w->port_input ? w->port_output ? "inout" : "input" : "output",
 						w->name.c_str(),
 						w->get_src_attribute().c_str()
 					);
 				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
 					RTLIL::Wire *w_t = module->addWire(ID2NAMETaint(w->name, taint_id), w->width);
-					w_t->port_input = true;
-				}
-			}
-			else if (w->port_output && !in_list(ID2NAME(w->name), ignore_ports)) {
-				if (verbose)
-					log("\t(p:%ld) instrument output port: %s @%s\n", 
-						port_count++, 
-						w->name.c_str(),
-						w->get_src_attribute().c_str()
-					);
-				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
-					RTLIL::Wire *w_t = module->addWire(ID2NAMETaint(w->name, taint_id), w->width);
-					w_t->port_output = true;
+					w_t->port_input = w->port_input;
+					w_t->port_output = w->port_output;
 				}
 			}
 		}
@@ -219,7 +209,7 @@ void PIFTWorker::addTaintCell_1I1O(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->parameters = origin->parameters;
 		cell->setParam(ID(TYPE), ID2NAME(origin->type));
 		cell->set_src_attribute(origin->get_src_attribute());
-		cell->set_bool_attribute(ID(tainted), true);
+		cell->set_bool_attribute(ID(pift_taint_gate), true);
 
 		cell->setPort(ID::A, port[A]);
 		cell->setPort(ID::Y, port[Y]);
@@ -247,7 +237,7 @@ void PIFTWorker::addTaintCell_2I1O(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->parameters = origin->parameters;
 		cell->setParam(ID(TYPE), ID2NAME(origin->type));
 		cell->set_src_attribute(origin->get_src_attribute());
-		cell->set_bool_attribute(ID(tainted), true);
+		cell->set_bool_attribute(ID(pift_taint_gate), true);
 
 		cell->setPort(ID::A, port[A]);
 		cell->setPort(ID::B, port[B]);
@@ -279,7 +269,7 @@ void PIFTWorker::addTaintCell_mux(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->parameters = origin->parameters;
 		cell->setParam(ID(TYPE), ID2NAME(origin->type));
 		cell->set_src_attribute(origin->get_src_attribute());
-		cell->set_bool_attribute(ID(tainted), true);
+		cell->set_bool_attribute(ID(pift_taint_gate), true);
 
 		cell->setPort(ID::A, port[A]);
 		cell->setPort(ID::B, port[B]);
@@ -317,7 +307,7 @@ void PIFTWorker::addTaintCell_dff(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->parameters = origin->parameters;
 		cell->setParam(ID(TYPE), ID2NAME(origin->type));
 		cell->set_src_attribute(origin->get_src_attribute());
-		cell->set_bool_attribute(ID(tainted), true);
+		cell->set_bool_attribute(ID(pift_taint_reg), true);
 
 		cell->setPort(ID::CLK, port[CLK]);
 		cell->setPort(ID::SRST, port[SRST]);
@@ -366,7 +356,7 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 		RTLIL::Cell *cell = module->addCell(NEW_ID, ID(taintcell_mem));
 		cell->parameters = origin->parameters;
 		cell->set_src_attribute(origin->get_src_attribute());
-		cell->set_bool_attribute(ID(tainted), true);
+		cell->set_bool_attribute(ID(pift_taint_mem), true);
 
 		cell->setPort(ID::RD_CLK, port[RD_CLK]);
 		cell->setPort(ID::RD_EN, port[RD_EN]);
