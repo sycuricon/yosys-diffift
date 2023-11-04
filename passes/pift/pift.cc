@@ -15,6 +15,17 @@ PRIVATE_NAMESPACE_BEGIN
 #define __NameTaint_MACRO_CHOOSER(...) __NameTaint_GET_3TH_ARG(__VA_ARGS__, NameTaint_2_ARGS, NameTaint_1_ARGS, )
 #define ID2NAMETaint(...) __NameTaint_MACRO_CHOOSER(__VA_ARGS__)(__VA_ARGS__)
 
+#define NO_STYLE	"\033[0m"
+#define RED			"\033[31m"
+#define GREEN		"\033[32m"
+#define YELLOW		"\033[33m"
+#define BLUE		"\033[34m"
+#define PURPLE		"\033[35m"
+#define CYAN		"\033[36m"
+#define GREY		"\033[90m"
+#define PINK		"\033[95m"
+
+
 void split_by(const std::string &in, const std::string &delimiter, std::vector<string> &out)
 {
 	size_t port_start = 0, port_end;
@@ -54,13 +65,13 @@ struct PIFTWorker {
 		std::vector<RTLIL::SigSpec> sig_t(taint_num);
 
 		if (verbose)
-			log("\t\tgenerate taint signal for %s\n", log_signal(sig, false));
+			log("\t\tgenerate taint signal for " GREEN "%s" NO_STYLE "\n", log_signal(sig, false));
 		
 		for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
 			for (auto &s: sig.chunks()) {
 				if (s.is_wire() && !in_list(ID2NAME(s.wire->name), ignore_ports)) {
 					if (verbose)
-						log("\t\t\t%s @%s\n", log_signal(s, false), s.wire->get_src_attribute().c_str());
+						log(GREEN "\t\t\t%s " GREY "@%s" NO_STYLE "\n", log_signal(s, false), s.wire->get_src_attribute().c_str());
 					RTLIL::Wire *w = module->wire(ID2NAMETaint(s.wire->name, taint_id));
 					if (w == nullptr) {
 						w = module->addWire(ID2NAMETaint(s.wire->name, taint_id), s.wire);
@@ -86,7 +97,7 @@ struct PIFTWorker {
 		for (auto w : module->wires().to_vector()) {
 			if ((w->port_input || w->port_output) && !in_list(ID2NAME(w->name), ignore_ports)) {
 				if (verbose)
-					log("\t(p:%ld) instrument %s port: %s @%s\n", 
+					log(YELLOW "\t(p:%ld) " NO_STYLE "instrument %s " YELLOW "port" NO_STYLE ": " BLUE "%s " GREY "@%s" NO_STYLE "\n", 
 						port_count++,
 						w->port_input ? w->port_output ? "inout" : "input" : "output",
 						w->name.c_str(),
@@ -110,7 +121,7 @@ struct PIFTWorker {
 		size_t cell_count = 0;
 		for (auto c : module->cells().to_vector()) {
 			if (verbose)
-				log("\t[c:%ld] instrument cell %s instance %s @%s\n", 
+				log(CYAN "\t[c:%ld] " NO_STYLE "instrument " CYAN "cell" BLUE " %s" NO_STYLE " instance " GREEN "%s " GREY "@%s" NO_STYLE "\n", 
 					cell_count++, 
 					c->type.c_str(), 
 					c->name.c_str(), 
@@ -150,7 +161,7 @@ struct PIFTWorker {
 						continue;
 
 					if (verbose)
-						log("\t\tinst port %s %s\n", it.first.c_str(), log_signal(it.second, false));
+						log("\t\tinst port " BLUE "%s " GREEN "%s" NO_STYLE "\n", it.first.c_str(), log_signal(it.second, false));
 
 					std::vector<RTLIL::SigSpec> port_taint = get_taint_signals(module, it.second);
 					for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
@@ -172,7 +183,7 @@ struct PIFTWorker {
 		size_t wire_count = 0;
 		for (auto &conn : std::vector<RTLIL::SigSig> {module->connections()}) {
 			if (verbose)
-				log("\t-w:%ld- instrument connection from %s to %s\n", 
+				log(PINK "\t-w:%ld- " NO_STYLE "instrument " PINK "connection" NO_STYLE " from " GREEN "%s" NO_STYLE " to " GREEN "%s" NO_STYLE "\n", 
 					wire_count++, 
 					log_signal(conn.first, false), 
 					log_signal(conn.second, false)
@@ -414,8 +425,13 @@ struct ProgrammableIFTPass : public Pass {
 			log("\n");
 		}
 
+		size_t module_count = 0;
 		for (RTLIL::Module *module : design->modules()) {
-			log("Instrument module %s\n", module->name.c_str());
+			if (worker.verbose)
+				log(PURPLE "{m:%ld} " NO_STYLE "instrument " PURPLE "module" BLUE " %s " GREY "@%s" NO_STYLE "\n", 
+					module_count++, 
+					module->name.c_str(), 
+					module->get_src_attribute().c_str());
 			worker.instrument(module);
 		}
 	}
