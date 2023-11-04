@@ -132,7 +132,10 @@ struct PIFTWorker {
 			else if (c->type.in(ID($mux), ID($bwmux), ID($pmux)))
 				addTaintCell_mux(module, c);
 
-			else if (c->type.in(ID($dff), ID($sdff), ID($adff), ID($dffe), ID($sdffe), ID($sdffce)))
+			else if (c->type.in(
+					ID($dff), ID($sdff), ID($adff), 
+					ID($dffe), ID($sdffe), ID($adffe), 
+					ID($sdffce)))
 				addTaintCell_dff(module, c);
 
 			else if (c->type.in(ID($mem_v2)))
