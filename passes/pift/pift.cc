@@ -90,7 +90,8 @@ struct PIFTWorker {
 	}
 
 	void instrument_port(RTLIL::Module *module) {
-		if (module->get_bool_attribute(ID(pift_port_instrumented)))
+		if (module->get_bool_attribute(ID(pift_port_instrumented)) ||
+			module->get_bool_attribute(ID(pift_ignore_module)))
 			return;
 
 		size_t port_count = 0;
@@ -153,8 +154,9 @@ struct PIFTWorker {
 				addTaintCell_mem(module, c);
 
 			else if (module->design->module(c->type) != nullptr) {
-				RTLIL::Module *cell_module_def = module->design->module(c->type);
-				instrument_port(cell_module_def);
+				RTLIL::Module *cell_module = module->design->module(c->type);
+
+				bool ignore_module = cell_module->get_bool_attribute(ID(pift_ignore_module));
 
 				for (auto &it : dict<RTLIL::IdString, RTLIL::SigSpec> {c->connections()}) {
 					if (in_list(ID2NAME(it.first), ignore_ports))
@@ -165,7 +167,11 @@ struct PIFTWorker {
 
 					std::vector<RTLIL::SigSpec> port_taint = get_taint_signals(module, it.second);
 					for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
-						c->setPort(ID2NAMETaint(it.first, taint_id), port_taint[taint_id]);
+						if (ignore_module)
+							module->connect(port_taint[taint_id], RTLIL::SigSpec(RTLIL::Const(0, port_taint[taint_id].size())));
+						else
+							c->setPort(ID2NAMETaint(it.first, taint_id), port_taint[taint_id]);
+						
 					}
 				}
 			}
@@ -202,8 +208,8 @@ struct PIFTWorker {
 
 	void instrument(RTLIL::Module *module) {
 		instrument_port(module);
-		instrument_cell(module);
 		instrument_wire(module);
+		instrument_cell(module);
 	}
 };
 
@@ -228,8 +234,8 @@ void PIFTWorker::addTaintCell_1I1O(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->setPort(ID::A, port[A]);
 		cell->setPort(ID::Y, port[Y]);
 
-		cell->setPort(ID(A_t), port_taint[A][taint_id]);
-		cell->setPort(ID(Y_t), port_taint[Y][taint_id]);
+		cell->setPort(ID(A_taint), port_taint[A][taint_id]);
+		cell->setPort(ID(Y_taint), port_taint[Y][taint_id]);
 	}
 }
 
@@ -257,9 +263,9 @@ void PIFTWorker::addTaintCell_2I1O(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->setPort(ID::B, port[B]);
 		cell->setPort(ID::Y, port[Y]);
 
-		cell->setPort(ID(A_t), port_taint[A][taint_id]);
-		cell->setPort(ID(B_t), port_taint[B][taint_id]);
-		cell->setPort(ID(Y_t), port_taint[Y][taint_id]);
+		cell->setPort(ID(A_taint), port_taint[A][taint_id]);
+		cell->setPort(ID(B_taint), port_taint[B][taint_id]);
+		cell->setPort(ID(Y_taint), port_taint[Y][taint_id]);
 	}
 }
 
@@ -290,10 +296,10 @@ void PIFTWorker::addTaintCell_mux(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->setPort(ID::S, port[S]);
 		cell->setPort(ID::Y, port[Y]);
 
-		cell->setPort(ID(A_t), port_taint[A][taint_id]);
-		cell->setPort(ID(B_t), port_taint[B][taint_id]);
-		cell->setPort(ID(S_t), port_taint[S][taint_id]);
-		cell->setPort(ID(Y_t), port_taint[Y][taint_id]);
+		cell->setPort(ID(A_taint), port_taint[A][taint_id]);
+		cell->setPort(ID(B_taint), port_taint[B][taint_id]);
+		cell->setPort(ID(S_taint), port_taint[S][taint_id]);
+		cell->setPort(ID(Y_taint), port_taint[Y][taint_id]);
 	}
 }
 
@@ -329,9 +335,9 @@ void PIFTWorker::addTaintCell_dff(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->setPort(ID::EN, port[EN]);
 		cell->setPort(ID::D, port[D]);
 		cell->setPort(ID::Q, port[Q]);
-		cell->setPort(ID(EN_t), port_taint[EN][taint_id]);
-		cell->setPort(ID(D_t), port_taint[D][taint_id]);
-		cell->setPort(ID(Q_t), port_taint[Q][taint_id]);
+		cell->setPort(ID(EN_taint), port_taint[EN][taint_id]);
+		cell->setPort(ID(D_taint), port_taint[D][taint_id]);
+		cell->setPort(ID(Q_taint), port_taint[Q][taint_id]);
 	}
 }
 
@@ -383,12 +389,12 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->setPort(ID::WR_ADDR, port[WR_ADDR]);
 		cell->setPort(ID::WR_DATA, port[WR_DATA]);
 		
-		cell->setPort(ID(RD_EN_t), port_taint[RD_EN][taint_id]);
-		cell->setPort(ID(RD_ADDR_t), port_taint[RD_ADDR][taint_id]);
-		cell->setPort(ID(RD_DATA_t), port_taint[RD_DATA][taint_id]);
-		cell->setPort(ID(WR_EN_t), port_taint[WR_EN][taint_id]);
-		cell->setPort(ID(WR_ADDR_t), port_taint[WR_ADDR][taint_id]);
-		cell->setPort(ID(WR_DATA_t), port_taint[WR_DATA][taint_id]);
+		cell->setPort(ID(RD_EN_taint), port_taint[RD_EN][taint_id]);
+		cell->setPort(ID(RD_ADDR_taint), port_taint[RD_ADDR][taint_id]);
+		cell->setPort(ID(RD_DATA_taint), port_taint[RD_DATA][taint_id]);
+		cell->setPort(ID(WR_EN_taint), port_taint[WR_EN][taint_id]);
+		cell->setPort(ID(WR_ADDR_taint), port_taint[WR_ADDR][taint_id]);
+		cell->setPort(ID(WR_DATA_taint), port_taint[WR_DATA][taint_id]);
 	}
 }
 
