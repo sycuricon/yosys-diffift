@@ -225,7 +225,7 @@ void PIFTWorker::addTaintCell_1I1O(RTLIL::Module *module, RTLIL::Cell *origin) {
 	};
 
 	for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
-		RTLIL::Cell *cell = module->addCell(NEW_ID, ID(taintcell_2I1O));
+		RTLIL::Cell *cell = module->addCell(NEW_ID, ID(taintcell_1I1O));
 		cell->parameters = origin->parameters;
 		cell->setParam(ID(TYPE), ID2NAME(origin->type));
 		cell->set_src_attribute(origin->get_src_attribute());
@@ -375,6 +375,7 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 	for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
 		RTLIL::Cell *cell = module->addCell(NEW_ID, ID(taintcell_mem));
 		cell->parameters = origin->parameters;
+		cell->setParam(ID::INIT, 0);
 		cell->set_src_attribute(origin->get_src_attribute());
 		cell->set_bool_attribute(ID(pift_taint_mem), true);
 
