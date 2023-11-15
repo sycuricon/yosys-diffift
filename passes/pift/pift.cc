@@ -167,11 +167,8 @@ struct PIFTWorker {
 
 					std::vector<RTLIL::SigSpec> port_taint = get_taint_signals(module, it.second);
 					for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
-						if (ignore_module)
-							module->connect(port_taint[taint_id], RTLIL::SigSpec(RTLIL::Const(0, port_taint[taint_id].size())));
-						else
-							c->setPort(ID2NAMETaint(it.first, taint_id), port_taint[taint_id]);
-						
+						if (!ignore_module)
+							c->setPort(ID2NAMETaint(it.first, taint_id), port_taint[taint_id]);						
 					}
 				}
 			}
