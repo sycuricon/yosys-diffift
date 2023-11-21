@@ -130,27 +130,34 @@ struct PIFTWorker {
 				);
 			
 			if (c->type.in(
-			      ID($not), ID($pos), ID($neg),
-			      ID($reduce_and), ID($reduce_or), ID($reduce_xor), ID($reduce_xnor), ID($reduce_bool),
-			      ID($logic_not)))
+			    ID($not), ID($pos), ID($neg),
+			    ID($reduce_and), ID($reduce_or), ID($reduce_xor), ID($reduce_xnor), ID($reduce_bool),
+			    ID($logic_not)
+			))
 				addTaintCell_1I1O(module, c);
 			else if (c->type.in(
 				   ID($and), ID($or), ID($xor), ID($xnor),
 				   ID($lt), ID($le), ID($eq), ID($ne), ID($eqx), ID($nex), ID($ge), ID($gt),
 				   ID($add), ID($sub), ID($mul), ID($div), ID($mod), ID($divfloor), ID($modfloor),
 				   ID($logic_and), ID($logic_or),
-				   ID($shift), ID($shiftx), ID($shl), ID($shr), ID($sshl), ID($sshr)))
+				   ID($shift), ID($shiftx), ID($shl), ID($shr), ID($sshl), ID($sshr)
+			))
 				addTaintCell_2I1O(module, c);
-			else if (c->type.in(ID($mux), ID($bwmux), ID($pmux)))
+			else if (c->type.in(
+				ID($mux)
+			))
 				addTaintCell_mux(module, c);
 
 			else if (c->type.in(
-					ID($dff), ID($sdff), ID($adff), 
-					ID($dffe), ID($sdffe), ID($adffe), 
-					ID($sdffce)))
+				ID($dff), ID($sdff), ID($adff), 
+				ID($dffe), ID($sdffe), ID($adffe), 
+				ID($sdffce)
+			))
 				addTaintCell_dff(module, c);
 
-			else if (c->type.in(ID($mem_v2)))
+			else if (c->type.in(
+				ID($mem_v2)
+			))
 				addTaintCell_mem(module, c);
 
 			else if (module->design->module(c->type) != nullptr) {
@@ -332,6 +339,8 @@ void PIFTWorker::addTaintCell_dff(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->setPort(ID::EN, port[EN]);
 		cell->setPort(ID::D, port[D]);
 		cell->setPort(ID::Q, port[Q]);
+		cell->setPort(ID(SRST_taint), port_taint[SRST][taint_id]);
+		cell->setPort(ID(ARST_taint), port_taint[ARST][taint_id]);
 		cell->setPort(ID(EN_taint), port_taint[EN][taint_id]);
 		cell->setPort(ID(D_taint), port_taint[D][taint_id]);
 		cell->setPort(ID(Q_taint), port_taint[Q][taint_id]);
@@ -372,7 +381,7 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 	for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
 		RTLIL::Cell *cell = module->addCell(NEW_ID, ID(taintcell_mem));
 		cell->parameters = origin->parameters;
-		cell->setParam(ID::INIT, 0);
+		cell->unsetParam(ID::INIT);
 		cell->set_src_attribute(origin->get_src_attribute());
 		cell->set_bool_attribute(ID(pift_taint_mem), true);
 
@@ -388,6 +397,8 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->setPort(ID::WR_DATA, port[WR_DATA]);
 		
 		cell->setPort(ID(RD_EN_taint), port_taint[RD_EN][taint_id]);
+		cell->setPort(ID(RD_ARST_taint), port_taint[RD_ARST][taint_id]);
+		cell->setPort(ID(RD_SRST_taint), port_taint[RD_SRST][taint_id]);
 		cell->setPort(ID(RD_ADDR_taint), port_taint[RD_ADDR][taint_id]);
 		cell->setPort(ID(RD_DATA_taint), port_taint[RD_DATA][taint_id]);
 		cell->setPort(ID(WR_EN_taint), port_taint[WR_EN][taint_id]);
