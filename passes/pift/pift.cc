@@ -166,16 +166,23 @@ struct PIFTWorker {
 				bool ignore_module = cell_module->get_bool_attribute(ID(pift_ignore_module));
 
 				for (auto &it : dict<RTLIL::IdString, RTLIL::SigSpec> {c->connections()}) {
-					if (in_list(ID2NAME(it.first), ignore_ports))
-						continue;
-
+					bool ignore_port = in_list(ID2NAME(it.first), ignore_ports);
 					if (verbose)
 						log("\t\tinst port " BLUE "%s " GREEN "%s" NO_STYLE "\n", it.first.c_str(), log_signal(it.second, false));
 
 					std::vector<RTLIL::SigSpec> port_taint = get_taint_signals(module, it.second);
 					for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
-						if (!ignore_module)
-							c->setPort(ID2NAMETaint(it.first, taint_id), port_taint[taint_id]);						
+						if (ignore_module || ignore_port) {
+							if (cell_module->wire(it.first)->port_input)
+								break;
+							else if (cell_module->wire(it.first)->port_output)
+								module->connect(port_taint[taint_id], RTLIL::SigSpec(RTLIL::Const(0, it.second.size())));
+							else
+								log_cmd_error("Catch an unsupported port: %s!\n", ID2NAME(it.first).c_str());
+						}
+						else {
+							c->setPort(ID2NAMETaint(it.first, taint_id), port_taint[taint_id]);	
+						}
 					}
 				}
 			}
@@ -382,6 +389,8 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 		RTLIL::Cell *cell = module->addCell(NEW_ID, ID(taintcell_mem));
 		cell->parameters = origin->parameters;
 		cell->unsetParam(ID::INIT);
+		cell->unsetParam(ID::RD_INIT_VALUE);
+		cell->unsetParam(ID::RD_WIDE_CONTINUATION);
 		cell->set_src_attribute(origin->get_src_attribute());
 		cell->set_bool_attribute(ID(pift_taint_mem), true);
 
