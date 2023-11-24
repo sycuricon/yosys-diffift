@@ -69,7 +69,9 @@ struct PIFTWorker {
 		
 		for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
 			for (auto &s: sig.chunks()) {
-				if (s.is_wire() && !in_list(ID2NAME(s.wire->name), ignore_ports)) {
+				if (s.is_wire() && 
+					!in_list(ID2NAME(s.wire->name), ignore_ports) && 
+					!s.wire->get_bool_attribute(ID(pift_taint_wire))) {
 					if (verbose)
 						log(GREEN "\t\t\t%s " GREY "@%s" NO_STYLE "\n", log_signal(s, false), s.wire->get_src_attribute().c_str());
 					RTLIL::Wire *w = module->wire(ID2NAMETaint(s.wire->name, taint_id));
@@ -77,6 +79,7 @@ struct PIFTWorker {
 						w = module->addWire(ID2NAMETaint(s.wire->name, taint_id), s.wire);
 						w->port_input = false;
 						w->port_output = false;
+						w->set_bool_attribute(ID(pift_taint_wire), true);
 					}
 					sig_t[taint_id].append(RTLIL::SigSpec(w, s.offset, s.width));
 				}
@@ -91,8 +94,10 @@ struct PIFTWorker {
 
 	void instrument_port(RTLIL::Module *module) {
 		if (module->get_bool_attribute(ID(pift_port_instrumented)) ||
-			module->get_bool_attribute(ID(pift_ignore_module)))
-			return;
+			module->get_bool_attribute(ID(pift_ignore_module))) {
+				module->set_bool_attribute(ID(pift_port_instrumented), true);
+				return;
+		}
 
 		size_t port_count = 0;
 		for (auto w : module->wires().to_vector()) {
@@ -104,10 +109,18 @@ struct PIFTWorker {
 						w->name.c_str(),
 						w->get_src_attribute().c_str()
 					);
+
+				std::vector<RTLIL::SigSpec> port_taint = get_taint_signals(module, w);
+
 				for (unsigned long taint_id = 0; taint_id < taint_num; taint_id++) {
-					RTLIL::Wire *w_t = module->addWire(ID2NAMETaint(w->name, taint_id), w->width);
-					w_t->port_input = w->port_input;
-					w_t->port_output = w->port_output;
+					if (module->get_bool_attribute(ID(pift_keep_port))) {
+						if (w->port_input)
+							module->connect(port_taint[taint_id], RTLIL::SigSpec(RTLIL::Const(0, w->width)));
+					}
+					else {
+						port_taint[taint_id].as_wire()->port_input = w->port_input;
+						port_taint[taint_id].as_wire()->port_output = w->port_output;
+					}
 				}
 			}
 		}
@@ -211,7 +224,7 @@ struct PIFTWorker {
 
 			for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
 				module->connect(lvalue[taint_id], rvalue[taint_id]);
-			}	
+			}
 		}
 
 		module->set_bool_attribute(ID(pift_wire_instrumented), true);
