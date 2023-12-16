@@ -72,9 +72,11 @@ struct PIFTWorker {
 				if (s.is_wire() && 
 					!in_list(ID2NAME(s.wire->name), ignore_ports) && 
 					!s.wire->get_bool_attribute(ID(pift_taint_wire))) {
-					if (verbose)
-						log(GREEN "\t\t\t%s " GREY "@%s" NO_STYLE "\n", log_signal(s, false), s.wire->get_src_attribute().c_str());
 					RTLIL::Wire *w = module->wire(ID2NAMETaint(s.wire->name, taint_id));
+					if (verbose)
+						log(GREEN "\t\t\t(%s) %s " GREY "@%s" NO_STYLE "\n", 
+						w == nullptr ? "new" : "exist",
+						log_signal(s, false), s.wire->get_src_attribute().c_str());
 					if (w == nullptr) {
 						w = module->addWire(ID2NAMETaint(s.wire->name, taint_id), s.wire);
 						w->port_input = false;
@@ -101,7 +103,9 @@ struct PIFTWorker {
 
 		size_t port_count = 0;
 		for (auto w : module->wires().to_vector()) {
-			if ((w->port_input || w->port_output) && !in_list(ID2NAME(w->name), ignore_ports)) {
+			if ((w->port_input || w->port_output) && 
+			    !in_list(ID2NAME(w->name), ignore_ports) &&
+				!w->get_bool_attribute(ID(pift_taint_wire))) {
 				if (verbose)
 					log(YELLOW "\t(p:%ld) " NO_STYLE "instrument %s " YELLOW "port" NO_STYLE ": " BLUE "%s " GREY "@%s" NO_STYLE "\n", 
 						port_count++,
