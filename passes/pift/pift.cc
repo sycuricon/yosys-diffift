@@ -157,10 +157,10 @@ struct PIFTWorker {
 				addTaintCell_1I1O(module, c);
 			else if (c->type.in(
 				   ID($and), ID($or), ID($xor), ID($xnor),
-				   ID($lt), ID($le), ID($eq), ID($ne), ID($eqx), ID($nex), ID($ge), ID($gt),
+				   ID($lt), ID($le), ID($eq), ID($ne), ID($ge), ID($gt),
 				   ID($add), ID($sub), ID($mul), ID($div), ID($mod), ID($divfloor), ID($modfloor),
 				   ID($logic_and), ID($logic_or),
-				   ID($shift), ID($shiftx), ID($shl), ID($shr), ID($sshl), ID($sshr)
+				   ID($shift), ID($shl), ID($shr), ID($sshl), ID($sshr)
 			))
 				addTaintCell_2I1O(module, c);
 			else if (c->type.in(
