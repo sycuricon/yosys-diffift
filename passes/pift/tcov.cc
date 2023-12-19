@@ -23,17 +23,22 @@ struct TCOVWorker {
 			return;
 
 		std::vector<RTLIL::Cell*> taint_cells;
+		int cell_cnt = 0;
 		for (auto c : module->cells().to_vector()) {
 			if (c->type.in(ID(taintcell_dff))) {
 				if (verbose)
 					log("catch a tainted register %s @%s\n", c->name.c_str(), c->get_src_attribute().c_str());
-				c->setPort(ID(taint_sum), module->addWire(NEW_ID, 1));
+				c->setPort(
+					ID(taint_sum),
+					module->addWire(RTLIL::IdString("\\_" + std::to_string(cell_cnt++) + "_dff_taint_sum"), 1));
 				taint_cells.push_back(c);
 			}
 			else if (c->type.in(ID(taintcell_mem))) {
 				if (verbose)
 					log("catch a tainted memory %s @%s\n", c->name.c_str(), c->get_src_attribute().c_str());
-				c->setPort(ID(taint_sum), module->addWire(NEW_ID, c->getParam(ID::ABITS).as_int()));
+				c->setPort(
+					ID(taint_sum),
+					module->addWire(RTLIL::IdString("\\_" + std::to_string(cell_cnt++) + "_mem_taint_sum"), c->getParam(ID::ABITS).as_int()));
 				taint_cells.push_back(c);
 			}
 			else if (module->design->module(c->type) != nullptr) {
@@ -43,7 +48,9 @@ struct TCOVWorker {
 					cell_module->get_bool_attribute(ID(pift_port_instrumented))) {
 					if (verbose)
 						log("catch a tainted module %s @%s\n", c->name.c_str(), c->get_src_attribute().c_str());
-					c->setPort(ID(taint_sum), module->addWire(NEW_ID, 32));
+					c->setPort(
+						ID(taint_sum), 
+						module->addWire(RTLIL::IdString("\\" + ID2NAME(c->name) + "_" + ID2NAME(cell_module->name) + "_taint_sum"), 32));
 					taint_cells.push_back(c);
 				}
 			}
@@ -51,7 +58,7 @@ struct TCOVWorker {
 
 		RTLIL::SigSpec acc = RTLIL::SigSpec(RTLIL::Const(0, 32));
 		for (auto c : taint_cells) {
-			acc = module->Add(NEW_ID_SUFFIX("taint_acc"), acc, c->getPort(ID(taint_sum)));
+			acc = module->Add(NEW_ID, acc, c->getPort(ID(taint_sum)));
 		}
 
 		RTLIL::Wire *sum_port = module->addWire(ID(taint_sum), acc.size());
