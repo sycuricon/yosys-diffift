@@ -160,7 +160,7 @@ struct PIFTWorker {
 				   ID($lt), ID($le), ID($eq), ID($ne), ID($ge), ID($gt),
 				   ID($add), ID($sub), ID($mul), ID($div), ID($mod), ID($divfloor), ID($modfloor),
 				   ID($logic_and), ID($logic_or),
-				   ID($shift), ID($shl), ID($shr), ID($sshl), ID($sshr)
+				   ID($shl), ID($shr), ID($sshl), ID($sshr)
 			))
 				addTaintCell_2I1O(module, c);
 			else if (c->type.in(
