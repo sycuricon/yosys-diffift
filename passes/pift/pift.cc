@@ -160,7 +160,7 @@ struct PIFTWorker {
 				   ID($lt), ID($le), ID($eq), ID($ne), ID($ge), ID($gt),
 				   ID($add), ID($sub), ID($mul), ID($div), ID($mod), ID($divfloor), ID($modfloor),
 				   ID($logic_and), ID($logic_or),
-				   ID($shl), ID($shr), ID($sshl), ID($sshr)
+				   ID($shl), ID($shr), ID($sshl), ID($sshr), ID($shift), ID($shiftx)
 			))
 				addTaintCell_2I1O(module, c);
 			else if (c->type.in(
@@ -442,8 +442,7 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 
 struct ProgrammableIFTPass : public Pass {
 	ProgrammableIFTPass() : Pass("pift") {}
-	void execute(std::vector<std::string> args, RTLIL::Design *design) override
-	{
+	void execute(std::vector<std::string> args, RTLIL::Design *design) override {
 		log_header(design, "Executing Programmable Information Flow Tracking Instrumentation Pass \n");
 		PIFTWorker worker;
 		size_t argidx;
