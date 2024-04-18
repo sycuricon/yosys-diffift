@@ -64,9 +64,14 @@ struct PIFTWorker {
 	std::vector<RTLIL::SigSpec> get_taint_signals(RTLIL::Module *module, const RTLIL::SigSpec &sig) {
 		std::vector<RTLIL::SigSpec> sig_t(taint_num);
 
-		if (verbose)
-			log("\t\tgenerate taint signal for " GREEN "%s" NO_STYLE "\n", log_signal(sig, false));
-		
+		if (verbose) {
+			log("\t\tgenerate taint signal for " GREEN "%s" NO_STYLE " %s%s%s \n", 
+				log_signal(sig, false),
+				sig.is_wire() ? "wire " : "",
+				sig.is_chunk() ? "chunk " : "",
+				sig.is_fully_const() ? "const" : "");
+		}
+
 		for (unsigned int taint_id = 0; taint_id < taint_num; taint_id++) {
 			for (auto &s: sig.chunks()) {
 				if (s.is_wire() && 
@@ -201,7 +206,8 @@ struct PIFTWorker {
 								log_cmd_error("Catch an unsupported port: %s!\n", ID2NAME(it.first).c_str());
 						}
 						else {
-							c->setPort(ID2NAMETaint(it.first, taint_id), port_taint[taint_id]);	
+							if (!port_taint[taint_id].is_fully_const() || cell_module->wire(it.first)->port_input)
+								c->setPort(ID2NAMETaint(it.first, taint_id), port_taint[taint_id]);	
 						}
 					}
 				}
