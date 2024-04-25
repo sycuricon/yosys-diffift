@@ -272,7 +272,7 @@ void PIFTWorker::addTaintCell_1I1O(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->set_bool_attribute(ID(pift_taint_gate), true);
 
 		cell->setPort(ID::A, port[A]);
-		cell->setPort(ID::Y, port[Y]);
+		// cell->setPort(ID::Y, port[Y]);
 
 		cell->setPort(ID(A_taint), port_taint[A][taint_id]);
 		cell->setPort(ID(Y_taint), port_taint[Y][taint_id]);
@@ -301,7 +301,7 @@ void PIFTWorker::addTaintCell_2I1O(RTLIL::Module *module, RTLIL::Cell *origin) {
 
 		cell->setPort(ID::A, port[A]);
 		cell->setPort(ID::B, port[B]);
-		cell->setPort(ID::Y, port[Y]);
+		// cell->setPort(ID::Y, port[Y]);
 
 		cell->setPort(ID(A_taint), port_taint[A][taint_id]);
 		cell->setPort(ID(B_taint), port_taint[B][taint_id]);
@@ -334,7 +334,7 @@ void PIFTWorker::addTaintCell_mux(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->setPort(ID::A, port[A]);
 		cell->setPort(ID::B, port[B]);
 		cell->setPort(ID::S, port[S]);
-		cell->setPort(ID::Y, port[Y]);
+		// cell->setPort(ID::Y, port[Y]);
 
 		cell->setPort(ID(A_taint), port_taint[A][taint_id]);
 		cell->setPort(ID(B_taint), port_taint[B][taint_id]);
@@ -428,11 +428,11 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->setPort(ID::RD_ARST, port[RD_ARST]);
 		cell->setPort(ID::RD_SRST, port[RD_SRST]);
 		cell->setPort(ID::RD_ADDR, port[RD_ADDR]);
-		cell->setPort(ID::RD_DATA, port[RD_DATA]);
+		// cell->setPort(ID::RD_DATA, port[RD_DATA]);
 		cell->setPort(ID::WR_CLK, port[WR_CLK]);
 		cell->setPort(ID::WR_EN, port[WR_EN]);
 		cell->setPort(ID::WR_ADDR, port[WR_ADDR]);
-		cell->setPort(ID::WR_DATA, port[WR_DATA]);
+		// cell->setPort(ID::WR_DATA, port[WR_DATA]);
 		
 		cell->setPort(ID(RD_EN_taint), port_taint[RD_EN][taint_id]);
 		cell->setPort(ID(RD_ARST_taint), port_taint[RD_ARST][taint_id]);
