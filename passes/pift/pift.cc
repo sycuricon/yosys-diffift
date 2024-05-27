@@ -301,7 +301,7 @@ void PIFTWorker::addTaintCell_2I1O(RTLIL::Module *module, RTLIL::Cell *origin) {
 
 		cell->setPort(ID::A, port[A]);
 		cell->setPort(ID::B, port[B]);
-		// cell->setPort(ID::Y, port[Y]);
+		cell->setPort(ID::Y, port[Y]);
 
 		cell->setPort(ID(A_taint), port_taint[A][taint_id]);
 		cell->setPort(ID(B_taint), port_taint[B][taint_id]);
