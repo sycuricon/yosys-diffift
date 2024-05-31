@@ -46,7 +46,8 @@ bool in_list(const string &target, std::vector<string> &list)
 struct PIFTWorker {
 	bool verbose = false;
 	unsigned long taint_num = 1;
-	std::vector<string> ignore_ports;
+	std::vector<std::string> ignore_ports;
+	dict<std::string, pool<std::string>> vlist;
 
 	void addTaintCell_1I1O(RTLIL::Module *module, RTLIL::Cell *origin);
 	void addTaintCell_2I1O(RTLIL::Module *module, RTLIL::Cell *origin);
@@ -369,6 +370,12 @@ void PIFTWorker::addTaintCell_dff(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->set_src_attribute(origin->get_src_attribute());
 		cell->set_bool_attribute(ID(pift_taint_reg), true);
 
+		if (module->name.isPublic() && (port[Q].is_wire() && port[Q].as_wire()->name.isPublic())) {
+			if (vlist[ID2NAME(module->name)].count(ID2NAME(port[Q].as_wire()->name)) > 0) {
+				cell->set_bool_attribute(ID(pift_taint_sink), true);
+			}
+		}
+
 		cell->setPort(ID::CLK, port[CLK]);
 		cell->setPort(ID::SRST, port[SRST]);
 		cell->setPort(ID::ARST, port[ARST]);
@@ -423,6 +430,8 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->set_src_attribute(origin->get_src_attribute());
 		cell->set_bool_attribute(ID(pift_taint_mem), true);
 
+		cell->set_bool_attribute(ID(pift_taint_sink), true);
+
 		cell->setPort(ID::RD_CLK, port[RD_CLK]);
 		cell->setPort(ID::RD_EN, port[RD_EN]);
 		cell->setPort(ID::RD_ARST, port[RD_ARST]);
@@ -464,6 +473,30 @@ struct ProgrammableIFTPass : public Pass {
 			if (args[argidx] == "--ignore-ports") {
 				std::string ignores = args[++argidx];
 				split_by(ignores, ",", worker.ignore_ports);
+				continue;
+			}
+			if (args[argidx] == "--vec_anno") {
+				std::string anno = args[++argidx];
+				std::ifstream anno_file(anno);
+				if (!anno_file.is_open())
+					log_cmd_error("Cannot open file %s\n", anno.c_str());
+				
+				std::string current_module;
+				std::string line;
+				while (std::getline(anno_file, line)) {
+					line.erase(std::remove_if(line.begin(), line.end(), ::isspace), line.end());
+
+					if (line.empty())
+						continue;
+					
+					if (line[0] == '@') {
+						std::string reg_name = line.substr(1);
+						worker.vlist[current_module].insert(reg_name);
+					}
+					else {
+						current_module = line;
+					}
+				}
 				continue;
 			}
 		}
