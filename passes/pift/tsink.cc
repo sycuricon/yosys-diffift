@@ -15,60 +15,32 @@ PRIVATE_NAMESPACE_BEGIN
 #define __NameTaint_MACRO_CHOOSER(...) __NameTaint_GET_3TH_ARG(__VA_ARGS__, NameTaint_2_ARGS, NameTaint_1_ARGS, )
 #define ID2NAMETaint(...) __NameTaint_MACRO_CHOOSER(__VA_ARGS__)(__VA_ARGS__)
 
-struct mod_info_t {
-	RTLIL::Module *module;
-	bool has_memory = false;
-	bool has_handshake_port = false;
-	std::set<RTLIL::IdString> child;
-};
 
 struct TSINKWorker {
 	bool verbose = false;
-	std::map<RTLIL::IdString, mod_info_t> mod_stat;
-	std::set<RTLIL::IdString> selected;
+	std::vector<std::string> target_module;
+	std::ofstream output;
 
-	mod_info_t process(RTLIL::Module *module) {
-		mod_info_t info;
-		info.module = module;
-		for (auto port : module->ports) {
-			if (port.contains("_valid")) {
-				info.has_handshake_port = true;
-				break;
+	void process(RTLIL::Module *module, std::string path) {
+		bool is_sink_module = false;
+		for (RTLIL::Cell *cell: module->cells()) {
+			RTLIL::Module *submodule = module->design->module(cell->type);
+			if (submodule == nullptr) {
+				if (cell->get_bool_attribute(ID(pift_taint_sink))) {
+					is_sink_module = true;
+				}
+			}
+			else {
+				process(submodule, path + "/" + ID2NAME(cell->name));
 			}
 		}
 
-		for (auto cell : module->cells().to_vector()) {
-			if (cell->type == ID($mem_v2)) {
-				if (verbose)
-					log("// \t%s#memory\n", cell->name.c_str());
-				info.has_memory = true;
-				continue;
-			}
-			if (cell->type.isPublic()) {
-				if (verbose)
-					log("// \t%s@%s\n", cell->name.c_str(), cell->type.c_str());
-				info.child.insert(cell->type);
-			}
+		if (is_sink_module) {
+			log("Found sink module: %s\n", path.c_str());
+			target_module.push_back(path);
 		}
-
-		return info;
-	}
-
-	bool walk_hierarchy(RTLIL::Module *entry) {
-		mod_info_t current = mod_stat[entry->name];
-		bool has_memory = current.has_memory;
-		for (auto child : current.child) {
-			has_memory |= walk_hierarchy(mod_stat[child].module);
-		}
-
-		if (current.has_handshake_port && has_memory) {
-			selected.insert(entry->name);
-		}
-
-		return has_memory;
 	}
 };
-
 
 struct TaintSinkPass : public Pass {
 	TaintSinkPass() : Pass("tsink") {}
@@ -76,31 +48,32 @@ struct TaintSinkPass : public Pass {
 	{
 		log_header(design, "Figure out potential taint sinks module \n");
 		TSINKWorker worker;
-		RTLIL::Module *top = nullptr;
+
 		size_t argidx;
 		for (argidx = 1; argidx < args.size(); argidx++) {
 			if (args[argidx] == "--verbose") {
 				worker.verbose = true;
 				continue;
 			}
-			if (args[argidx] == "--top" && argidx+1 < args.size()) {
-				if (design->module(RTLIL::escape_id(args[argidx+1])) == nullptr)
-					log_cmd_error("Can't find module %s.\n", args[argidx+1].c_str());
-				top = design->module(RTLIL::escape_id(args[++argidx]));
+			if (args[argidx] == "--output" && argidx+1 < args.size()) {
+				std::string output_file = args[++argidx];
+				worker.output.open(output_file);
+				if (!worker.output.is_open())
+					log_cmd_error("Cannot open file %s\n", output_file.c_str());
 				continue;
 			}
 		}
 		extra_args(args, argidx, design);
 
-		for (RTLIL::Module *module : design->modules()) {
-			if (worker.verbose)
-				log("// module %s @%s\n", module->name.c_str(), module->get_src_attribute().c_str());
-			worker.mod_stat[module->name] = worker.process(module);
+		worker.process(design->top_module(), "/ldut");
+
+		for (std::string instance: worker.target_module) {
+			if (instance.find("tile_reset_domain") == std::string::npos)
+				continue;
+			worker.output << "fuSetSignal {/Testbench/testHarness" + instance + "/taint_local_sum}" << std::endl;
+			worker.output << "fuSetSignal {/Testbench/testHarness_variant" + instance + "/taint_local_sum}" << std::endl;
 		}
-		worker.walk_hierarchy(top);
-		for (auto out : worker.selected) {
-			log("%s\n", log_id(out));
-		}
+		worker.output.close();
 	}
 } TaintSinkPass;
 
