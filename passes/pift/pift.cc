@@ -387,6 +387,47 @@ void PIFTWorker::addTaintCell_dff(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->setPort(ID(EN_taint), port_taint[EN][taint_id]);
 		cell->setPort(ID(D_taint), port_taint[D][taint_id]);
 		cell->setPort(ID(Q_taint), port_taint[Q][taint_id]);
+
+		if (port[Q].is_wire() && port[Q].as_wire()->has_attribute(ID(divaift_liveness_mask))) {
+			std::string liveness_attr = port[Q].as_wire()->get_string_attribute(ID(divaift_liveness_mask));
+			std::vector<std::string> liveness_args;
+			split_by(liveness_attr, ",", liveness_args);
+			log("liveness_args: %ld, %s\n", liveness_args.size(), liveness_attr.c_str());
+			cell->setParam(ID(LIVENESS_TYPE), liveness_args[0]);
+
+			if (liveness_args[0] == "queue") {
+				// type, size, enq, deq, idx
+				if (liveness_args.size() != 5)
+					log_cmd_error("Invalid queue arguements: %s\n", liveness_attr.c_str());
+
+				RTLIL::Wire* queue_enq = module->wire(RTLIL::escape_id(liveness_args[2]));
+				RTLIL::Wire* queue_deq = module->wire(RTLIL::escape_id(liveness_args[3]));
+
+				if (queue_enq == nullptr || queue_deq == nullptr)
+					log_cmd_error("Invalid queue ptr: %s %s\n", 
+						liveness_args[2].c_str(), 
+						liveness_args[3].c_str());
+
+				cell->setPort(ID(LIVENESS_OP0), queue_enq);
+				cell->setPort(ID(LIVENESS_OP1), queue_deq);
+				cell->setParam(ID(LIVENESS_SIZE), liveness_args[1]);
+				cell->setParam(ID(LIVENESS_IDX), liveness_args[4]);
+			}
+			else if (liveness_args[0] == "bitmap" || liveness_args[0] == "bitmap_n") {
+				// type, size, vector, idx
+				if (liveness_args.size() != 4)
+					log_cmd_error("Invalid bitmap arguements: %s\n", liveness_attr.c_str());
+				
+				RTLIL::Wire* bitmap_vector = module->wire(RTLIL::escape_id(liveness_args[2]));
+
+				if (bitmap_vector == nullptr)
+					log_cmd_error("Invalid bitmap vector: %s\n", liveness_args[2].c_str());
+
+				cell->setPort(ID(LIVENESS_OP0), bitmap_vector);
+				cell->setParam(ID(LIVENESS_SIZE), liveness_args[1]);
+				cell->setParam(ID(LIVENESS_IDX), liveness_args[3]);
+			}
+		}
 	}
 }
 
@@ -451,6 +492,65 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->setPort(ID(WR_EN_taint), port_taint[WR_EN][taint_id]);
 		cell->setPort(ID(WR_ADDR_taint), port_taint[WR_ADDR][taint_id]);
 		cell->setPort(ID(WR_DATA_taint), port_taint[WR_DATA][taint_id]);
+
+		if (origin->has_attribute(ID(divaift_liveness_mask))) {
+			std::string liveness_attr = origin->get_string_attribute(ID(divaift_liveness_mask));
+			std::vector<std::string> liveness_args;
+			split_by(liveness_attr, ",", liveness_args);
+			log("liveness_args: %ld, %s\n", liveness_args.size(), liveness_attr.c_str());
+			cell->setParam(ID(LIVENESS_TYPE), liveness_args[0]);
+
+			if (liveness_args[0] == "queue") {
+				// type, enq, deq
+				if (liveness_args.size() != 3)
+					log_cmd_error("Invalid queue arguements: %s\n", liveness_attr.c_str());
+
+				RTLIL::Wire* queue_enq = module->wire(RTLIL::escape_id(liveness_args[1]));
+				RTLIL::Wire* queue_deq = module->wire(RTLIL::escape_id(liveness_args[2]));
+
+				if (queue_enq == nullptr || queue_deq == nullptr)
+					log_cmd_error("Invalid queue ptr: %s %s\n", 
+						liveness_args[1].c_str(), 
+						liveness_args[2].c_str());
+
+				cell->setPort(ID(LIVENESS_OP0), queue_enq);
+				cell->setPort(ID(LIVENESS_OP1), queue_deq);
+			}
+			else if (liveness_args[0] == "bitmap" || liveness_args[0] == "bitmap_n") {
+				// type, vector
+				if (liveness_args.size() != 2)
+					log_cmd_error("Invalid bitmap arguements: %s\n", liveness_attr.c_str());
+				
+				RTLIL::Wire* bitmap_vector = module->wire(RTLIL::escape_id(liveness_args[1]));
+
+				if (bitmap_vector == nullptr)
+					log_cmd_error("Invalid bitmap vector: %s\n", liveness_args[1].c_str());
+
+				cell->setPort(ID(LIVENESS_OP0), bitmap_vector);
+			}
+		}
+		else if (module->name.begins_with(RTLIL::escape_id("Queue").c_str()) || module->name.begins_with(RTLIL::escape_id("Queue").c_str())) {
+			if (cell->getParam(ID(SIZE)).as_int() == 1) {
+				cell->setParam(ID(LIVENESS_TYPE), Yosys::RTLIL::Const("cond"));
+				RTLIL::Wire* full = module->wire(RTLIL::escape_id("maybe_full"));
+
+				if (full == nullptr)
+					log_cmd_error("Invalid queue ptr: %s\n", "maybe_full");
+
+				cell->setPort(ID(LIVENESS_OP0), full);
+			}
+			else {
+				cell->setParam(ID(LIVENESS_TYPE), Yosys::RTLIL::Const("queue"));
+				RTLIL::Wire* queue_enq = module->wire(RTLIL::escape_id("enq_ptr_value"));
+				RTLIL::Wire* queue_deq = module->wire(RTLIL::escape_id("deq_ptr_value"));
+
+				if (queue_enq == nullptr || queue_deq == nullptr)
+					log_cmd_error("Invalid queue ptr: %s %s\n", "enq_ptr_value", "deq_ptr_value");
+
+				cell->setPort(ID(LIVENESS_OP0), queue_enq);
+				cell->setPort(ID(LIVENESS_OP1), queue_deq);
+			}
+		}
 	}
 }
 
@@ -486,7 +586,7 @@ struct ProgrammableIFTPass : public Pass {
 				while (std::getline(anno_file, line)) {
 					line.erase(std::remove_if(line.begin(), line.end(), ::isspace), line.end());
 
-					if (line.empty())
+					if (line.empty() || line[0] == '#')
 						continue;
 					
 					if (line[0] == '@') {
