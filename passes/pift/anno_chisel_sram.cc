@@ -1,0 +1,127 @@
+#include "kernel/yosys.h"
+#include "kernel/rtlil.h"
+#include "kernel/utils.h"
+#include "kernel/log.h"
+
+USING_YOSYS_NAMESPACE
+
+PRIVATE_NAMESPACE_BEGIN
+
+#define ID2NAME(id) (id.str().substr(1))
+#define NameTaint(id, t_id) (id.str() + "_taint_" + std::to_string(t_id))
+#define NameTaint_1_ARGS(id) NameTaint(id, 0)
+#define NameTaint_2_ARGS(id, t_id) NameTaint(id, t_id)
+#define __NameTaint_GET_3TH_ARG(arg1, arg2, arg3, ...) arg3
+#define __NameTaint_MACRO_CHOOSER(...) __NameTaint_GET_3TH_ARG(__VA_ARGS__, NameTaint_2_ARGS, NameTaint_1_ARGS, )
+#define ID2NAMETaint(...) __NameTaint_MACRO_CHOOSER(__VA_ARGS__)(__VA_ARGS__)
+
+std::vector<string> split_string(const std::string &in, const std::string &delimiter) {
+	std::vector<string> res;
+	size_t port_start = 0, port_end;
+	while ((port_end = in.find(delimiter, port_start)) != std::string::npos) {
+		res.push_back(in.substr(port_start, port_end - port_start));
+		port_start = port_end + delimiter.length();
+	}
+	res.push_back(in.substr(port_start));
+
+	return res;
+}
+
+struct AnnoSRAMWorker {
+	bool verbose = false;
+
+	void process(RTLIL::Module *module) {
+		// type, ops, insts
+		std::string anno = module->get_string_attribute(ID(divaift_sram_liveness));
+
+		std::vector<std::string> anno_args = split_string(anno, ",");
+
+		if (anno_args[0] == "queue") {
+			if (anno_args.size() != 4)
+				log_error("Invalid queue annotation: %s\n", anno.c_str());
+
+			RTLIL::Wire* enq_ptr = module->wire(RTLIL::escape_id(anno_args[1]));
+			RTLIL::Wire* deq_ptr = module->wire(RTLIL::escape_id(anno_args[2]));
+			if (enq_ptr == nullptr || deq_ptr == nullptr)
+				log_error("enq_ptr/deq_ptr not found in module: %s %s\n", anno_args[1].c_str(), anno_args[2].c_str());
+			
+			std::vector<std::string> insts = split_string(anno_args[3], ";");
+			for (auto inst : insts) {
+				RTLIL::Cell* wrapper_cell = module->cell(RTLIL::escape_id(inst));
+				wrapper_cell->setPort(ID(LIVENESS_OP0), enq_ptr);
+				wrapper_cell->setPort(ID(LIVENESS_OP1), deq_ptr);
+
+				RTLIL::Module *wrapper_module = module->design->module(wrapper_cell->type);
+				int op_widths = std::max(enq_ptr->width, deq_ptr->width);
+
+				anno_sram(wrapper_module, op_widths, "queue");
+			}
+		}
+	}
+
+	void anno_sram (RTLIL::Module *wrapper_module, int op_widths, std::string liveness_type) {
+		if (wrapper_module->get_bool_attribute(ID(divaift_sram_liveness_done)))
+			return;
+
+		RTLIL::Wire *bypass_op0 = wrapper_module->addWire(ID(LIVENESS_OP0), op_widths);
+		RTLIL::Wire *bypass_op1 = wrapper_module->addWire(ID(LIVENESS_OP1), op_widths);
+		bypass_op0->port_input = true;
+		bypass_op1->port_input = true;
+		wrapper_module->fixup_ports();
+
+		for (auto sram_cell : wrapper_module->cells()) {
+			if (sram_cell->type.isPublic()) {
+				sram_cell->setPort(ID(LIVENESS_OP0), bypass_op0);
+				sram_cell->setPort(ID(LIVENESS_OP1), bypass_op1);
+
+				RTLIL::Module *sram_module = wrapper_module->design->module(sram_cell->type);
+				RTLIL::Wire *op0 = sram_module->addWire(ID(LIVENESS_OP0), op_widths);
+				RTLIL::Wire *op1 = sram_module->addWire(ID(LIVENESS_OP1), op_widths);
+				op0->port_input = true;
+				op1->port_input = true;
+				sram_module->fixup_ports();
+
+				bool meet_sram = false;
+				for (auto sram_array : sram_module->cells()) {
+					if (sram_array->type == ID(taintcell_mem)) {
+						meet_sram = true;
+						sram_array->setParam(ID(LIVENESS_TYPE), liveness_type);
+						sram_array->setPort(ID(LIVENESS_OP0), op0);
+						sram_array->setPort(ID(LIVENESS_OP1), op1);
+					}
+				}
+				
+				if (!meet_sram) {
+					log_cmd_error("No sram cell found in module %s\n", sram_module->name.c_str());
+				}
+			}
+		}
+
+		wrapper_module->set_bool_attribute(ID(divaift_sram_liveness_done), true);
+	}
+};
+
+struct AnnoSRAMPass : public Pass {
+	AnnoSRAMPass() : Pass("anno_chisel_sram") {}
+	void execute(std::vector<std::string> args, RTLIL::Design *design) override {
+		log_header(design, "Annotate liveness information on external chisel sram\n");
+		AnnoSRAMWorker worker;
+
+		size_t argidx;
+		for (argidx = 1; argidx < args.size(); argidx++) {
+			if (args[argidx] == "--verbose") {
+				worker.verbose = true;
+				continue;
+			}
+		}
+		extra_args(args, argidx, design);
+
+		for (RTLIL::Module *module : design->modules()) {
+			if (module->has_attribute(ID(divaift_sram_liveness))) {
+				worker.process(module);
+			}
+		}
+	}
+} AnnoSRAMPass;
+
+PRIVATE_NAMESPACE_END
