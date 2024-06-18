@@ -410,8 +410,8 @@ void PIFTWorker::addTaintCell_dff(RTLIL::Module *module, RTLIL::Cell *origin) {
 
 				cell->setPort(ID(LIVENESS_OP0), queue_enq);
 				cell->setPort(ID(LIVENESS_OP1), queue_deq);
-				cell->setParam(ID(LIVENESS_SIZE), liveness_args[1]);
-				cell->setParam(ID(LIVENESS_IDX), liveness_args[4]);
+				cell->setParam(ID(LIVENESS_SIZE), std::stoi(liveness_args[1]));
+				cell->setParam(ID(LIVENESS_IDX), std::stoi(liveness_args[4]));
 			}
 			else if (liveness_args[0] == "bitmap" || liveness_args[0] == "bitmap_n") {
 				// type, size, vector, idx
@@ -424,8 +424,8 @@ void PIFTWorker::addTaintCell_dff(RTLIL::Module *module, RTLIL::Cell *origin) {
 					log_cmd_error("Invalid bitmap vector: %s\n", liveness_args[2].c_str());
 
 				cell->setPort(ID(LIVENESS_OP0), bitmap_vector);
-				cell->setParam(ID(LIVENESS_SIZE), liveness_args[1]);
-				cell->setParam(ID(LIVENESS_IDX), liveness_args[3]);
+				cell->setParam(ID(LIVENESS_SIZE), std::stoi(liveness_args[1]));
+				cell->setParam(ID(LIVENESS_IDX), std::stoi(liveness_args[3]));
 			}
 		}
 	}
