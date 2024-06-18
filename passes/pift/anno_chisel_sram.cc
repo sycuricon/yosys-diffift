@@ -37,22 +37,25 @@ struct AnnoSRAMWorker {
 		std::vector<std::string> anno_args = split_string(anno, ",");
 
 		if (anno_args[0] == "queue") {
-			if (anno_args.size() != 4)
+			// type, enq, deq, full, insts
+			if (anno_args.size() != 5)
 				log_error("Invalid queue annotation: %s\n", anno.c_str());
 
-			RTLIL::Wire* enq_ptr = module->wire(RTLIL::escape_id(anno_args[1]));
-			RTLIL::Wire* deq_ptr = module->wire(RTLIL::escape_id(anno_args[2]));
-			if (enq_ptr == nullptr || deq_ptr == nullptr)
-				log_error("enq_ptr/deq_ptr not found in module: %s %s\n", anno_args[1].c_str(), anno_args[2].c_str());
+			RTLIL::Wire* queue_enq = module->wire(RTLIL::escape_id(anno_args[1]));
+			RTLIL::Wire* queue_deq = module->wire(RTLIL::escape_id(anno_args[2]));
+			RTLIL::Wire* queue_full = module->wire(RTLIL::escape_id(anno_args[2]));
+			if (queue_enq == nullptr || queue_deq == nullptr || queue_full == nullptr)
+				log_error("Not found queue ptr %s %s %s in module\n", anno_args[1].c_str(), anno_args[2].c_str(), anno_args[3].c_str());
 			
-			std::vector<std::string> insts = split_string(anno_args[3], ";");
+			std::vector<std::string> insts = split_string(anno_args[4], ";");
 			for (auto inst : insts) {
 				RTLIL::Cell* wrapper_cell = module->cell(RTLIL::escape_id(inst));
-				wrapper_cell->setPort(ID(LIVENESS_OP0), enq_ptr);
-				wrapper_cell->setPort(ID(LIVENESS_OP1), deq_ptr);
+				wrapper_cell->setPort(ID(LIVENESS_OP0), queue_enq);
+				wrapper_cell->setPort(ID(LIVENESS_OP1), queue_deq);
+				wrapper_cell->setPort(ID(LIVENESS_OP2), queue_full);
 
 				RTLIL::Module *wrapper_module = module->design->module(wrapper_cell->type);
-				int op_widths = std::max(enq_ptr->width, deq_ptr->width);
+				int op_widths = std::max(queue_enq->width, queue_deq->width);
 
 				anno_sram(wrapper_module, op_widths, "queue");
 			}
@@ -65,20 +68,25 @@ struct AnnoSRAMWorker {
 
 		RTLIL::Wire *bypass_op0 = wrapper_module->addWire(ID(LIVENESS_OP0), op_widths);
 		RTLIL::Wire *bypass_op1 = wrapper_module->addWire(ID(LIVENESS_OP1), op_widths);
+		RTLIL::Wire *bypass_op2 = wrapper_module->addWire(ID(LIVENESS_OP2), op_widths);
 		bypass_op0->port_input = true;
 		bypass_op1->port_input = true;
+		bypass_op2->port_input = true;
 		wrapper_module->fixup_ports();
 
 		for (auto sram_cell : wrapper_module->cells()) {
 			if (sram_cell->type.isPublic()) {
 				sram_cell->setPort(ID(LIVENESS_OP0), bypass_op0);
 				sram_cell->setPort(ID(LIVENESS_OP1), bypass_op1);
+				sram_cell->setPort(ID(LIVENESS_OP2), bypass_op2);
 
 				RTLIL::Module *sram_module = wrapper_module->design->module(sram_cell->type);
 				RTLIL::Wire *op0 = sram_module->addWire(ID(LIVENESS_OP0), op_widths);
 				RTLIL::Wire *op1 = sram_module->addWire(ID(LIVENESS_OP1), op_widths);
+				RTLIL::Wire *op2 = sram_module->addWire(ID(LIVENESS_OP2), op_widths);
 				op0->port_input = true;
 				op1->port_input = true;
+				op2->port_input = true;
 				sram_module->fixup_ports();
 
 				bool meet_sram = false;
@@ -88,6 +96,7 @@ struct AnnoSRAMWorker {
 						sram_array->setParam(ID(LIVENESS_TYPE), liveness_type);
 						sram_array->setPort(ID(LIVENESS_OP0), op0);
 						sram_array->setPort(ID(LIVENESS_OP1), op1);
+						sram_array->setPort(ID(LIVENESS_OP2), op2);
 					}
 				}
 				
@@ -118,6 +127,8 @@ struct AnnoSRAMPass : public Pass {
 
 		for (RTLIL::Module *module : design->modules()) {
 			if (module->has_attribute(ID(divaift_sram_liveness))) {
+				if (worker.verbose)
+					log("Catch SRAM liveness information on module %s\n", module->name.c_str());
 				worker.process(module);
 			}
 		}

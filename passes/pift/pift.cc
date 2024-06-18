@@ -396,36 +396,39 @@ void PIFTWorker::addTaintCell_dff(RTLIL::Module *module, RTLIL::Cell *origin) {
 			cell->setParam(ID(LIVENESS_TYPE), liveness_args[0]);
 
 			if (liveness_args[0] == "queue") {
-				// type, size, enq, deq, idx
-				if (liveness_args.size() != 5)
+				// type, size, idx, enq, deq, full
+				if (liveness_args.size() != 6)
 					log_cmd_error("Invalid queue arguements: %s\n", liveness_attr.c_str());
 
-				RTLIL::Wire* queue_enq = module->wire(RTLIL::escape_id(liveness_args[2]));
-				RTLIL::Wire* queue_deq = module->wire(RTLIL::escape_id(liveness_args[3]));
+				RTLIL::Wire* queue_enq = module->wire(RTLIL::escape_id(liveness_args[3]));
+				RTLIL::Wire* queue_deq = module->wire(RTLIL::escape_id(liveness_args[4]));
+				RTLIL::Wire* queue_full = module->wire(RTLIL::escape_id(liveness_args[5]));
 
-				if (queue_enq == nullptr || queue_deq == nullptr)
-					log_cmd_error("Invalid queue ptr: %s %s\n", 
-						liveness_args[2].c_str(), 
-						liveness_args[3].c_str());
+				if (queue_enq == nullptr || queue_deq == nullptr || queue_full == nullptr)
+					log_cmd_error("Invalid queue ptr: %s %s %s\n", 
+						liveness_args[3].c_str(), 
+						liveness_args[4].c_str(),
+						liveness_args[5].c_str());
 
 				cell->setPort(ID(LIVENESS_OP0), queue_enq);
 				cell->setPort(ID(LIVENESS_OP1), queue_deq);
+				cell->setPort(ID(LIVENESS_OP2), queue_full);
 				cell->setParam(ID(LIVENESS_SIZE), std::stoi(liveness_args[1]));
-				cell->setParam(ID(LIVENESS_IDX), std::stoi(liveness_args[4]));
+				cell->setParam(ID(LIVENESS_IDX), std::stoi(liveness_args[2]));
 			}
 			else if (liveness_args[0] == "bitmap" || liveness_args[0] == "bitmap_n") {
-				// type, size, vector, idx
+				// type, size, idx, vector
 				if (liveness_args.size() != 4)
 					log_cmd_error("Invalid bitmap arguements: %s\n", liveness_attr.c_str());
 				
-				RTLIL::Wire* bitmap_vector = module->wire(RTLIL::escape_id(liveness_args[2]));
+				RTLIL::Wire* bitmap_vector = module->wire(RTLIL::escape_id(liveness_args[3]));
 
 				if (bitmap_vector == nullptr)
-					log_cmd_error("Invalid bitmap vector: %s\n", liveness_args[2].c_str());
+					log_cmd_error("Invalid bitmap vector: %s\n", liveness_args[3].c_str());
 
 				cell->setPort(ID(LIVENESS_OP0), bitmap_vector);
 				cell->setParam(ID(LIVENESS_SIZE), std::stoi(liveness_args[1]));
-				cell->setParam(ID(LIVENESS_IDX), std::stoi(liveness_args[3]));
+				cell->setParam(ID(LIVENESS_IDX), std::stoi(liveness_args[2]));
 			}
 		}
 	}
@@ -501,20 +504,23 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 			cell->setParam(ID(LIVENESS_TYPE), liveness_args[0]);
 
 			if (liveness_args[0] == "queue") {
-				// type, enq, deq
-				if (liveness_args.size() != 3)
+				// type, enq, deq, full
+				if (liveness_args.size() != 4)
 					log_cmd_error("Invalid queue arguements: %s\n", liveness_attr.c_str());
 
 				RTLIL::Wire* queue_enq = module->wire(RTLIL::escape_id(liveness_args[1]));
 				RTLIL::Wire* queue_deq = module->wire(RTLIL::escape_id(liveness_args[2]));
+				RTLIL::Wire* queue_full = module->wire(RTLIL::escape_id(liveness_args[3]));
 
 				if (queue_enq == nullptr || queue_deq == nullptr)
-					log_cmd_error("Invalid queue ptr: %s %s\n", 
+					log_cmd_error("Invalid queue ptr: %s %s %s\n", 
 						liveness_args[1].c_str(), 
-						liveness_args[2].c_str());
+						liveness_args[2].c_str(),
+						liveness_args[3].c_str());
 
 				cell->setPort(ID(LIVENESS_OP0), queue_enq);
 				cell->setPort(ID(LIVENESS_OP1), queue_deq);
+				cell->setPort(ID(LIVENESS_OP2), queue_full);
 			}
 			else if (liveness_args[0] == "bitmap" || liveness_args[0] == "bitmap_n") {
 				// type, vector
@@ -543,12 +549,14 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 				cell->setParam(ID(LIVENESS_TYPE), Yosys::RTLIL::Const("queue"));
 				RTLIL::Wire* queue_enq = module->wire(RTLIL::escape_id("enq_ptr_value"));
 				RTLIL::Wire* queue_deq = module->wire(RTLIL::escape_id("deq_ptr_value"));
+				RTLIL::Wire* queue_full = module->wire(RTLIL::escape_id("maybe_full"));
 
-				if (queue_enq == nullptr || queue_deq == nullptr)
-					log_cmd_error("Invalid queue ptr: %s %s\n", "enq_ptr_value", "deq_ptr_value");
+				if (queue_enq == nullptr || queue_deq == nullptr || queue_full == nullptr)
+					log_cmd_error("Invalid queue ptr: enq_ptr_value deq_ptr_value maybe_full\n");
 
 				cell->setPort(ID(LIVENESS_OP0), queue_enq);
 				cell->setPort(ID(LIVENESS_OP1), queue_deq);
+				cell->setPort(ID(LIVENESS_OP2), queue_full);
 			}
 		}
 	}
