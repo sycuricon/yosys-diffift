@@ -430,6 +430,18 @@ void PIFTWorker::addTaintCell_dff(RTLIL::Module *module, RTLIL::Cell *origin) {
 				cell->setParam(ID(LIVENESS_SIZE), std::stoi(liveness_args[1]));
 				cell->setParam(ID(LIVENESS_IDX), std::stoi(liveness_args[2]));
 			}
+			else if (liveness_args[0] == "cond" || liveness_args[0] == "cond_n") {
+				// type, cond
+				if (liveness_args.size() != 2)
+					log_cmd_error("Invalid cond arguements: %s\n", liveness_attr.c_str());
+				
+				RTLIL::Wire* cond = module->wire(RTLIL::escape_id(liveness_args[1]));
+
+				if (cond == nullptr)
+					log_cmd_error("Invalid cond vector: %s\n", liveness_args[1].c_str());
+
+				cell->setPort(ID(LIVENESS_OP0), cond);
+			}
 		}
 	}
 }
@@ -533,6 +545,18 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 					log_cmd_error("Invalid bitmap vector: %s\n", liveness_args[1].c_str());
 
 				cell->setPort(ID(LIVENESS_OP0), bitmap_vector);
+			}
+			else if (liveness_args[0] == "cond" || liveness_args[0] == "cond_n") {
+				// type, cond
+				if (liveness_args.size() != 2)
+					log_cmd_error("Invalid cond arguements: %s\n", liveness_attr.c_str());
+				
+				RTLIL::Wire* cond = module->wire(RTLIL::escape_id(liveness_args[1]));
+
+				if (cond == nullptr)
+					log_cmd_error("Invalid cond vector: %s\n", liveness_args[1].c_str());
+
+				cell->setPort(ID(LIVENESS_OP0), cond);
 			}
 		}
 		else if (module->name.begins_with(RTLIL::escape_id("Queue").c_str()) || module->name.begins_with(RTLIL::escape_id("Queue").c_str())) {
