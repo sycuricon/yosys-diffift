@@ -30,10 +30,8 @@ std::vector<string> split_string(const std::string &in, const std::string &delim
 struct AnnoSRAMWorker {
 	bool verbose = false;
 
-	void process(RTLIL::Module *module) {
+	void process(RTLIL::Module *module, std::string anno) {
 		// type, ops, insts
-		std::string anno = module->get_string_attribute(ID(divaift_sram_liveness));
-
 		std::vector<std::string> anno_args = split_string(anno, ",");
 
 		if (anno_args[0] == "queue") {
@@ -49,17 +47,70 @@ struct AnnoSRAMWorker {
 			
 			std::vector<std::string> insts = split_string(anno_args[4], ";");
 			for (auto inst : insts) {
-				RTLIL::Cell* wrapper_cell = module->cell(RTLIL::escape_id(inst));
+				RTLIL::Cell* wrapper_cell = find_wrapper_cell(module, inst);
+				if (wrapper_cell == nullptr)
+					log_error("Not found instance %s in module\n", inst.c_str());
+
 				wrapper_cell->setPort(ID(LIVENESS_OP0), queue_enq);
 				wrapper_cell->setPort(ID(LIVENESS_OP1), queue_deq);
 				wrapper_cell->setPort(ID(LIVENESS_OP2), queue_full);
 
-				RTLIL::Module *wrapper_module = module->design->module(wrapper_cell->type);
 				int op_widths = std::max(queue_enq->width, queue_deq->width);
+				RTLIL::Module *wrapper_module = module->design->module(wrapper_cell->type);
+				if (wrapper_module == nullptr)
+					log_error("Not found SRAM Wrapper module %s for instance %s\n",
+						wrapper_cell->type.c_str(),
+						wrapper_cell->name.c_str()
+					);
 
 				anno_sram(wrapper_module, op_widths, "queue");
 			}
 		}
+		else if (anno_args[0] == "bitmap") {
+			// type, vector, insts
+			if (anno_args.size() != 3)
+				log_error("Invalid bitmap annotation: %s\n", anno.c_str());
+
+			RTLIL::Wire* valid_vector = module->wire(RTLIL::escape_id(anno_args[1]));
+			if (valid_vector == nullptr)
+				log_error("Not found vector %s in module\n", anno_args[1].c_str());
+
+			std::vector<std::string> insts = split_string(anno_args[2], ";");
+			for (auto inst : insts) {
+				if (verbose)
+					log("Instrument instance %s\n", inst.c_str());
+
+				RTLIL::Cell* wrapper_cell = find_wrapper_cell(module, inst);
+				if (wrapper_cell == nullptr)
+					log_error("Not found instance %s in module\n", inst.c_str());
+
+				wrapper_cell->setPort(ID(LIVENESS_OP0), valid_vector);
+
+				int op_widths = valid_vector->width;
+				RTLIL::Module *wrapper_module = module->design->module(wrapper_cell->type);
+				if (wrapper_module == nullptr)
+					log_error("Not found SRAM Wrapper module %s for instance %s\n",
+						wrapper_cell->type.c_str(),
+						wrapper_cell->name.c_str()
+					);
+
+				anno_sram(wrapper_module, op_widths, "bitmap");
+			}
+		}
+	}
+
+	RTLIL::Cell* find_wrapper_cell(RTLIL::Module* module, std::string target) {
+		RTLIL::Cell* wrapper_cell = module->cell(RTLIL::escape_id(target));
+		
+		if (wrapper_cell == nullptr) {
+			log("Not found instance %s, try alias %s\n", target.c_str(), (target + "_0").c_str());
+			wrapper_cell = module->cell(RTLIL::escape_id(target + "_0"));
+		}
+
+		if (wrapper_cell == nullptr)
+			log_error("Not found instance %s in module\n", target.c_str());
+		
+		return wrapper_cell;
 	}
 
 	void anno_sram (RTLIL::Module *wrapper_module, int op_widths, std::string liveness_type) {
@@ -81,6 +132,12 @@ struct AnnoSRAMWorker {
 				sram_cell->setPort(ID(LIVENESS_OP2), bypass_op2);
 
 				RTLIL::Module *sram_module = wrapper_module->design->module(sram_cell->type);
+				if (sram_module == nullptr)
+					log_error("Not found SRAM module %s for instance %s\n",
+						sram_cell->type.c_str(),
+						sram_cell->name.c_str()
+					);
+
 				RTLIL::Wire *op0 = sram_module->addWire(ID(LIVENESS_OP0), op_widths);
 				RTLIL::Wire *op1 = sram_module->addWire(ID(LIVENESS_OP1), op_widths);
 				RTLIL::Wire *op2 = sram_module->addWire(ID(LIVENESS_OP2), op_widths);
@@ -129,7 +186,14 @@ struct AnnoSRAMPass : public Pass {
 			if (module->has_attribute(ID(divaift_sram_liveness))) {
 				if (worker.verbose)
 					log("Catch SRAM liveness information on module %s\n", module->name.c_str());
-				worker.process(module);
+				std::string anno = module->get_string_attribute(ID(divaift_sram_liveness));
+				worker.process(module, anno);
+			}
+			else if (module->wire(ID(divaift_sram_hint)) != nullptr) {
+				if (worker.verbose)
+					log("Catch SRAM liveness hint signal in module %s\n", module->name.c_str());
+				std::string anno = module->wire(ID(divaift_sram_hint))->get_string_attribute(ID(divaift_sram_liveness));
+				worker.process(module, anno);
 			}
 		}
 	}
