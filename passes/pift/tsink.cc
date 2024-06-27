@@ -70,8 +70,8 @@ struct TaintSinkPass : public Pass {
 		for (std::string instance: worker.target_module) {
 			if (instance.find("tile_reset_domain") == std::string::npos)
 				continue;
-			worker.output << "fuSetSignal {/Testbench/testHarness" + instance + "/taint_local_sum}" << std::endl;
-			worker.output << "fuSetSignal {/Testbench/testHarness_variant" + instance + "/taint_local_sum}" << std::endl;
+			worker.output << "fuSetSignal {/Testbench/testHarness" + instance + "/taint_sink_sum}" << std::endl;
+			worker.output << "fuSetSignal {/Testbench/testHarness_variant" + instance + "/taint_sink_sum}" << std::endl;
 		}
 		worker.output.close();
 	}

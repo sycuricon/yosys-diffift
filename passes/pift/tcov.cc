@@ -17,22 +17,28 @@ PRIVATE_NAMESPACE_BEGIN
 
 struct TCOVWorker {
 	bool verbose = false;
+	bool array_only = false;
 
 	void instrument_coverage(RTLIL::Module *module) {
 		if (module->get_bool_attribute(ID(pift_ignore_module)))
 			return;
 
+		std::vector<RTLIL::Cell*> sink_cells;
 		std::vector<RTLIL::Cell*> taint_cells;
 		std::vector<RTLIL::Cell*> submodule_cells;
 		int cell_cnt = 0;
 		for (auto c : module->cells().to_vector()) {
-			if (c->type.in(ID(taintcell_dff)) && c->get_bool_attribute(ID(pift_taint_sink))) {
+			if (c->type.in(ID(taintcell_dff))) {
 				if (verbose)
 					log("catch a tainted register %s @%s\n", c->name.c_str(), c->get_src_attribute().c_str());
 				c->setPort(
 					ID(taint_sum),
 					module->addWire(RTLIL::IdString("\\_" + std::to_string(cell_cnt++) + "_dff_taint_sum"), 1));
-				taint_cells.push_back(c);
+
+				if (c->get_bool_attribute(ID(pift_taint_sink)))
+					sink_cells.push_back(c);
+				else
+					taint_cells.push_back(c);
 			}
 			else if (c->type.in(ID(taintcell_mem)) && c->get_bool_attribute(ID(pift_taint_sink))) {
 				if (verbose)
@@ -40,9 +46,13 @@ struct TCOVWorker {
 				c->setPort(
 					ID(taint_sum),
 					module->addWire(RTLIL::IdString("\\_" + std::to_string(cell_cnt++) + "_mem_taint_sum"), c->getParam(ID::ABITS).as_int()));
-				taint_cells.push_back(c);
+
+				if (c->get_bool_attribute(ID(pift_taint_sink)))
+					sink_cells.push_back(c);
+				else
+					taint_cells.push_back(c);
 			}
-			else if (module->design->module(c->type) != nullptr) {
+			else if (!array_only && module->design->module(c->type) != nullptr) {
 				RTLIL::Module *cell_module = module->design->module(c->type);
 
 				if (!cell_module->get_bool_attribute(ID(pift_ignore_module)) &&
@@ -57,32 +67,42 @@ struct TCOVWorker {
 			}
 		}
 
-		RTLIL::SigSpec local_acc = RTLIL::SigSpec(RTLIL::Const(0, 32));
-		for (auto c : taint_cells) {
-			local_acc = module->Add(NEW_ID, local_acc, c->getPort(ID(taint_sum)));
+		RTLIL::SigSpec sink_acc = RTLIL::SigSpec(RTLIL::Const(0, 32));
+		for (auto c : sink_cells) {
+			sink_acc = module->Add(NEW_ID, sink_acc, c->getPort(ID(taint_sum)));
 		}
 
-		RTLIL::Wire *local_sum = module->addWire(ID(taint_local_sum), local_acc.size());
-		module->connect(local_sum, local_acc);
-		local_sum->set_bool_attribute(ID(keep));
+		RTLIL::Wire *sink_sum = module->addWire(ID(taint_sink_sum), sink_acc.size());
+		module->connect(sink_sum, sink_acc);
+		sink_sum->set_bool_attribute(ID(keep));
 
+		if (!array_only) {
+			RTLIL::SigSpec local_acc = RTLIL::SigSpec(RTLIL::Const(0, 32));
+			for (auto c : taint_cells) {
+				local_acc = module->Add(NEW_ID, local_acc, c->getPort(ID(taint_sum)));
+			}
 
-		RTLIL::SigSpec hier_acc = RTLIL::SigSpec(RTLIL::Const(0, 32));
-		for (auto sm : submodule_cells) {
-			hier_acc = module->Add(NEW_ID, hier_acc, sm->getPort(ID(taint_sum)));
+			RTLIL::Wire *local_sum = module->addWire(ID(taint_local_sum), local_acc.size());
+			module->connect(local_sum, local_acc);
+			local_sum->set_bool_attribute(ID(keep));
+
+			RTLIL::SigSpec hier_acc = RTLIL::SigSpec(RTLIL::Const(0, 32));
+			for (auto sm : submodule_cells) {
+				hier_acc = module->Add(NEW_ID, hier_acc, sm->getPort(ID(taint_sum)));
+			}
+
+			RTLIL::Wire *hier_sum = module->addWire(ID(taint_hier_sum), hier_acc.size());
+			module->connect(hier_sum, hier_acc);
+
+			RTLIL::SigSpec taint_sum = module->Add(NEW_ID, local_sum, hier_sum);
+			RTLIL::Wire *taint_sum_port = module->addWire(ID(taint_sum), 32);
+			taint_sum_port->port_input = false;
+			taint_sum_port->port_output = true;
+
+			module->connect(taint_sum_port, taint_sum);
+
+			module->fixup_ports();
 		}
-
-		RTLIL::Wire *hier_sum = module->addWire(ID(taint_hier_sum), hier_acc.size());
-		module->connect(hier_sum, hier_acc);
-
-		RTLIL::SigSpec taint_sum = module->Add(NEW_ID, local_sum, hier_sum);
-		RTLIL::Wire *taint_sum_port = module->addWire(ID(taint_sum), 32);
-		taint_sum_port->port_input = false;
-		taint_sum_port->port_output = true;
-
-		module->connect(taint_sum_port, taint_sum);
-
-		module->fixup_ports();
 	}
 };
 
@@ -97,6 +117,10 @@ struct TaintCoveragePass : public Pass {
 		for (argidx = 1; argidx < args.size(); argidx++) {
 			if (args[argidx] == "--verbose") {
 				worker.verbose = true;
+				continue;
+			}
+			if (args[argidx] == "--array_only") {
+				worker.array_only = true;
 				continue;
 			}
 		}
