@@ -15,7 +15,7 @@ PRIVATE_NAMESPACE_BEGIN
 #define __NameTaint_MACRO_CHOOSER(...) __NameTaint_GET_3TH_ARG(__VA_ARGS__, NameTaint_2_ARGS, NameTaint_1_ARGS, )
 #define ID2NAMETaint(...) __NameTaint_MACRO_CHOOSER(__VA_ARGS__)(__VA_ARGS__)
 
-struct TCOVWorker {
+struct TSumWorker {
 	bool verbose = false;
 	bool array_only = false;
 
@@ -105,12 +105,12 @@ struct TCOVWorker {
 };
 
 
-struct TaintCoveragePass : public Pass {
-	TaintCoveragePass() : Pass("tcov") {}
+struct TaintSummaryPass : public Pass {
+	TaintSummaryPass() : Pass("tsum") {}
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
-		log_header(design, "Executing Taint Coverage Instrumentation Pass \n");
-		TCOVWorker worker;
+		log_header(design, "Executing Taint Summary Instrumentation Pass \n");
+		TSumWorker worker;
 		size_t argidx;
 		for (argidx = 1; argidx < args.size(); argidx++) {
 			if (args[argidx] == "--verbose") {
@@ -130,6 +130,6 @@ struct TaintCoveragePass : public Pass {
 			worker.instrument_coverage(module);
 		}
 	}
-} TaintCoveragePass;
+} TaintSummaryPass;
 
 PRIVATE_NAMESPACE_END
