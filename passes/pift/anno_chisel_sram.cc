@@ -3,17 +3,11 @@
 #include "kernel/utils.h"
 #include "kernel/log.h"
 
+#include "divaift.h"
+
 USING_YOSYS_NAMESPACE
 
 PRIVATE_NAMESPACE_BEGIN
-
-#define ID2NAME(id) (id.str().substr(1))
-#define NameTaint(id, t_id) (id.str() + "_taint_" + std::to_string(t_id))
-#define NameTaint_1_ARGS(id) NameTaint(id, 0)
-#define NameTaint_2_ARGS(id, t_id) NameTaint(id, t_id)
-#define __NameTaint_GET_3TH_ARG(arg1, arg2, arg3, ...) arg3
-#define __NameTaint_MACRO_CHOOSER(...) __NameTaint_GET_3TH_ARG(__VA_ARGS__, NameTaint_2_ARGS, NameTaint_1_ARGS, )
-#define ID2NAMETaint(...) __NameTaint_MACRO_CHOOSER(__VA_ARGS__)(__VA_ARGS__)
 
 std::vector<string> split_string(const std::string &in, const std::string &delimiter) {
 	std::vector<string> res;

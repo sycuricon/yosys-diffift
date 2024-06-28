@@ -5,17 +5,11 @@
 #include "kernel/utils.h"
 #include "kernel/log.h"
 
+#include "divaift.h"
+
 USING_YOSYS_NAMESPACE
 
 PRIVATE_NAMESPACE_BEGIN
-
-#define ID2NAME(id) (id.str().substr(1))
-#define NameTaint(id, t_id) (id.str() + "_taint_" + std::to_string(t_id))
-#define NameTaint_1_ARGS(id) NameTaint(id, 0)
-#define NameTaint_2_ARGS(id, t_id) NameTaint(id, t_id)
-#define __NameTaint_GET_3TH_ARG(arg1, arg2, arg3, ...) arg3
-#define __NameTaint_MACRO_CHOOSER(...) __NameTaint_GET_3TH_ARG(__VA_ARGS__, NameTaint_2_ARGS, NameTaint_1_ARGS, )
-#define ID2NAMETaint(...) __NameTaint_MACRO_CHOOSER(__VA_ARGS__)(__VA_ARGS__)
 
 struct CtrlDFFWorker {
 	bool verbose;
@@ -153,11 +147,11 @@ struct CtrlDFFWorker {
 			if (mux_sink > 0) {
 				if (verbose)
 					log("cell %s (%s) is a control register (fanout: %ld/%ld)\n", 
-						c->name.c_str(), 
+						log_signal(c->getPort(ID(Q))), 
 						c->getParam(ID(TYPE)).decode_string().c_str(),
 						mux_sink, taint_list.size()
 					);
-				c->set_bool_attribute(ID(CTRL_REG), true);
+				c->set_bool_attribute(ID(pift_taint_sink), false);
 			}
 		}
 
@@ -166,7 +160,7 @@ struct CtrlDFFWorker {
 };
 
 struct ControlDFFPass : public Pass {
-	ControlDFFPass() : Pass("ctrl_dff") {}
+	ControlDFFPass() : Pass("remove_ctrl_dff") {}
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
 		log_header(design, "Find leaf dff \n");

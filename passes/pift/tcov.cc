@@ -3,13 +3,19 @@
 #include "kernel/utils.h"
 #include "kernel/log.h"
 
-#include "divaift.h"
-
 USING_YOSYS_NAMESPACE
 
 PRIVATE_NAMESPACE_BEGIN
 
-struct TSumWorker {
+#define ID2NAME(id) (id.str().substr(1))
+#define NameTaint(id, t_id) (id.str() + "_taint_" + std::to_string(t_id))
+#define NameTaint_1_ARGS(id) NameTaint(id, 0)
+#define NameTaint_2_ARGS(id, t_id) NameTaint(id, t_id)
+#define __NameTaint_GET_3TH_ARG(arg1, arg2, arg3, ...) arg3
+#define __NameTaint_MACRO_CHOOSER(...) __NameTaint_GET_3TH_ARG(__VA_ARGS__, NameTaint_2_ARGS, NameTaint_1_ARGS, )
+#define ID2NAMETaint(...) __NameTaint_MACRO_CHOOSER(__VA_ARGS__)(__VA_ARGS__)
+
+struct TCovWorker {
 	bool verbose = false;
 	bool array_only = false;
 
@@ -99,12 +105,12 @@ struct TSumWorker {
 };
 
 
-struct TaintSummaryPass : public Pass {
-	TaintSummaryPass() : Pass("tsum") {}
+struct TaintCoveragePass : public Pass {
+	TaintCoveragePass() : Pass("tcov2") {}
 	void execute(std::vector<std::string> args, RTLIL::Design *design) override
 	{
-		log_header(design, "Executing Taint Summary Instrumentation Pass \n");
-		TSumWorker worker;
+		log_header(design, "Executing Taint Coverage Instrumentation Pass \n");
+		TCovWorker worker;
 		size_t argidx;
 		for (argidx = 1; argidx < args.size(); argidx++) {
 			if (args[argidx] == "--verbose") {
@@ -124,6 +130,6 @@ struct TaintSummaryPass : public Pass {
 			worker.instrument_coverage(module);
 		}
 	}
-} TaintSummaryPass;
+} TaintCoveragePass;
 
 PRIVATE_NAMESPACE_END
