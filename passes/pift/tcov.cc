@@ -3,6 +3,8 @@
 #include "kernel/utils.h"
 #include "kernel/log.h"
 
+#include <stdlib.h>
+
 USING_YOSYS_NAMESPACE
 
 PRIVATE_NAMESPACE_BEGIN
@@ -17,112 +19,72 @@ PRIVATE_NAMESPACE_BEGIN
 
 struct TCovWorker {
 	bool verbose = false;
-	bool array_only = false;
 
 	void instrument_coverage(RTLIL::Module *module) {
 		if (module->get_bool_attribute(ID(pift_ignore_module)))
 			return;
 
-		std::vector<RTLIL::Cell*> sink_cells;
-		std::vector<RTLIL::Cell*> taint_cells;
-		std::vector<RTLIL::Cell*> submodule_cells;
-		int cell_cnt = 0;
+		std::vector<RTLIL::Cell*> reg_list;
 		for (auto c : module->cells().to_vector()) {
 			if (c->type.in(ID(taintcell_dff))) {
-				if (verbose)
-					log("catch a tainted register %s @%s\n", c->name.c_str(), c->get_src_attribute().c_str());
-				c->setPort(
-					ID(taint_sum),
-					module->addWire(RTLIL::IdString("\\_" + std::to_string(cell_cnt++) + "_dff_taint_sum"), 1));
-
-				if (c->get_bool_attribute(ID(pift_taint_sink)))
-					sink_cells.push_back(c);
-				else if (!array_only)
-					taint_cells.push_back(c);
-			}
-			else if (c->type.in(ID(taintcell_mem))) {
-				if (verbose)
-					log("catch a tainted memory %s @%s\n", c->name.c_str(), c->get_src_attribute().c_str());
-				c->setPort(
-					ID(taint_sum),
-					module->addWire(RTLIL::IdString("\\_" + std::to_string(cell_cnt++) + "_mem_taint_sum"), c->getParam(ID::ABITS).as_int()));
-
-				if (c->get_bool_attribute(ID(pift_taint_sink)))
-					sink_cells.push_back(c);
-				else if (!array_only)
-					taint_cells.push_back(c);
-			}
-			else if (module->design->module(c->type) != nullptr) {
-				RTLIL::Module *cell_module = module->design->module(c->type);
-
-				if (!cell_module->get_bool_attribute(ID(pift_ignore_module)) &&
-					cell_module->get_bool_attribute(ID(pift_port_instrumented))) {
-					if (verbose)
-						log("catch a tainted module %s @%s\n", c->name.c_str(), c->get_src_attribute().c_str());
-					c->setPort(
-						ID(taint_sum), 
-						module->addWire(RTLIL::IdString("\\" + ID2NAME(c->name) + "_" + ID2NAME(cell_module->name) + "_taint_sum"), 32));
-					submodule_cells.push_back(c);
-				}
+				reg_list.push_back(c);
 			}
 		}
 
-		RTLIL::SigSpec sink_acc = RTLIL::SigSpec(RTLIL::Const(0, 32));
-		for (auto c : sink_cells) {
-			sink_acc = module->Add(NEW_ID, sink_acc, c->getPort(ID(taint_sum)));
+		if (!reg_list.empty()) {
+			if (verbose)
+					log("module %s with %ld tainted register\n", module->name.c_str(), reg_list.size());
+
+			unsigned int reg_num_width = std::max((unsigned int)(std::log2(reg_list.size()) + 1), 8u);
+			unsigned int module_hash_width = std::min(reg_num_width, 15u) + 1;
+			unsigned int module_hash_state = std::pow(2, module_hash_width) - 1;
+
+			int reg_cnt = 0;
+			RTLIL::Cell* first_reg = reg_list.back();
+			reg_list.pop_back();
+			first_reg->setParam(ID(COVERAGE_WIDTH), module_hash_width);
+			first_reg->setParam(ID(COVERAGE_ID), (rand() % module_hash_state) + 1);
+			first_reg->setPort(ID(taint_hash), module->addWire(RTLIL::IdString("\\_" + std::to_string(reg_cnt++) + "_taint_covHash"), module_hash_width));
+			RTLIL::SigSpec cov_hash = first_reg->getPort(ID(taint_hash));
+
+			for (auto next_reg : reg_list) {
+				next_reg->setParam(ID(COVERAGE_WIDTH), module_hash_width);
+				next_reg->setParam(ID(COVERAGE_ID), (rand() % module_hash_state) + 1);
+				next_reg->setPort(ID(taint_hash), module->addWire(RTLIL::IdString("\\_" + std::to_string(reg_cnt++) + "_taint_covHash"), module_hash_width));
+				cov_hash = module->Xor(NEW_ID, cov_hash, next_reg->getPort(ID(taint_hash)));
+			}
+
+			RTLIL::Cell* cov_collect = module->addCell(NEW_ID, ID(tainthelp_coverage));
+			cov_collect->setParam(ID(COVERAGE_WIDTH), module_hash_width);
+			cov_collect->setPort(ID(COV_HASH), cov_hash);
+			cov_collect->set_bool_attribute(ID(keep), true);
 		}
-
-		RTLIL::Wire *sink_sum = module->addWire(ID(taint_sink_sum), sink_acc.size());
-		module->connect(sink_sum, sink_acc);
-		sink_sum->set_bool_attribute(ID(keep));
-
-		RTLIL::SigSpec local_acc = RTLIL::SigSpec(RTLIL::Const(0, 32));
-		for (auto c : taint_cells) {
-			local_acc = module->Add(NEW_ID, local_acc, c->getPort(ID(taint_sum)));
-		}
-
-		RTLIL::Wire *local_sum = module->addWire(ID(taint_local_sum), local_acc.size());
-		module->connect(local_sum, local_acc);
-		local_sum->set_bool_attribute(ID(keep));
-
-		RTLIL::SigSpec hier_acc = RTLIL::SigSpec(RTLIL::Const(0, 32));
-		for (auto sm : submodule_cells) {
-			hier_acc = module->Add(NEW_ID, hier_acc, sm->getPort(ID(taint_sum)));
-		}
-
-		RTLIL::Wire *hier_sum = module->addWire(ID(taint_hier_sum), hier_acc.size());
-		module->connect(hier_sum, hier_acc);
-
-		RTLIL::SigSpec taint_sum = module->Add(NEW_ID, sink_sum, module->Add(NEW_ID, local_sum, hier_sum));
-		RTLIL::Wire *taint_sum_port = module->addWire(ID(taint_sum), 32);
-		taint_sum_port->port_input = false;
-		taint_sum_port->port_output = true;
-
-		module->connect(taint_sum_port, taint_sum);
-
-		module->fixup_ports();
 	}
 };
 
 
 struct TaintCoveragePass : public Pass {
-	TaintCoveragePass() : Pass("tcov2") {}
-	void execute(std::vector<std::string> args, RTLIL::Design *design) override
-	{
+	TaintCoveragePass() : Pass("tcov") {}
+	void execute(std::vector<std::string> args, RTLIL::Design *design) override {
 		log_header(design, "Executing Taint Coverage Instrumentation Pass \n");
 		TCovWorker worker;
 		size_t argidx;
+		unsigned int seed = time(NULL);
 		for (argidx = 1; argidx < args.size(); argidx++) {
 			if (args[argidx] == "--verbose") {
 				worker.verbose = true;
 				continue;
 			}
-			if (args[argidx] == "--array_only") {
-				worker.array_only = true;
+			if (args[argidx] == "--seed") {
+				seed = atoi(args[++argidx].c_str());
 				continue;
 			}
 		}
 		extra_args(args, argidx, design);
+
+		srand(seed);
+		if (worker.verbose)
+			log("Instrumentation with seed: %u\n", seed);
 
 		for (RTLIL::Module *module : design->modules()) {
 			if (worker.verbose)
