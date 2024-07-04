@@ -357,6 +357,7 @@ void PIFTWorker::addTaintCell_dff(RTLIL::Module *module, RTLIL::Cell *origin) {
 		if (module->name.isPublic() && (port[Q].is_wire() && port[Q].as_wire()->name.isPublic())) {
 			if (vlist[ID2NAME(module->name)].count(ID2NAME(port[Q].as_wire()->name)) > 0) {
 				cell->set_bool_attribute(ID(pift_taint_sink), true);
+				cell->setParam(ID(TAINT_SINK), 1);
 			}
 		}
 
@@ -473,6 +474,7 @@ void PIFTWorker::addTaintCell_mem(RTLIL::Module *module, RTLIL::Cell *origin) {
 		cell->set_bool_attribute(ID(pift_taint_mem), true);
 
 		cell->set_bool_attribute(ID(pift_taint_sink), true);
+		cell->setParam(ID(TAINT_SINK), 1);
 
 		cell->setPort(ID::RD_CLK, port[RD_CLK]);
 		cell->setPort(ID::RD_EN, port[RD_EN]);
