@@ -62,6 +62,11 @@ struct TSumWorker {
 		RTLIL::Wire *local_sum = module->addWire(ID(taint_local_sum), local_acc.size());
 		module->connect(local_sum, local_acc);
 
+		RTLIL::Cell* cov_collect = module->addCell(NEW_ID, ID(tainthelp_coverage));
+		cov_collect->setParam(ID(COVERAGE_WIDTH), 32);
+		cov_collect->setPort(ID(COV_HASH), local_sum);
+		cov_collect->set_bool_attribute(ID(keep), true);
+
 		RTLIL::SigSpec hier_acc = RTLIL::SigSpec(RTLIL::Const(0, 32));
 		for (auto sm : submodule_cells) {
 			hier_acc = module->Add(NEW_ID, hier_acc, sm->getPort(ID(taint_sum)));
